@@ -6,22 +6,57 @@ export interface StackFrame {
   rawLine: string;
 }
 
-const V8_PATTERN = /^\s*at (?:(.+?)\s+\()?(.+?):(\d+):(\d+)\)?$/;
-const GECKO_WEBKIT_PATTERN = /^(?:([^@]*)\@)?(.+?):(\d+):(\d+)$/;
-
 function parseV8Frame(trimmed: string): StackFrame | null {
-  const match = V8_PATTERN.exec(trimmed);
-  if (!match) return null;
+  if (!trimmed.startsWith('at ')) return null;
+  const line = trimmed.slice(3).trim();
+  if (!line) return null;
 
-  const rawFunc = match[1];
-  const scriptUrl = match[2];
-  const lineNumber = parseInt(match[3], 10);
-  const columnNumber = parseInt(match[4], 10);
+  if (line.endsWith(')')) {
+    const firstParenIdx = line.indexOf('(');
+    if (firstParenIdx !== -1) {
+      const funcPart = line.slice(0, firstParenIdx).trim();
+      const locPart = line.slice(firstParenIdx + 1, -1).trim();
+
+      const lastColon = locPart.lastIndexOf(':');
+      if (lastColon === -1) return null;
+      const secondLastColon = locPart.lastIndexOf(':', lastColon - 1);
+      if (secondLastColon === -1) return null;
+
+      const scriptUrl = locPart.slice(0, secondLastColon);
+      const lineStr = locPart.slice(secondLastColon + 1, lastColon);
+      const colStr = locPart.slice(lastColon + 1);
+
+      const lineNumber = parseInt(lineStr, 10);
+      const columnNumber = parseInt(colStr, 10);
+
+      if (!scriptUrl || isNaN(lineNumber) || isNaN(columnNumber)) return null;
+
+      return {
+        functionName: funcPart || 'anonymous',
+        scriptUrl,
+        lineNumber,
+        columnNumber,
+        rawLine: trimmed,
+      };
+    }
+  }
+
+  const lastColon = line.lastIndexOf(':');
+  if (lastColon === -1) return null;
+  const secondLastColon = line.lastIndexOf(':', lastColon - 1);
+  if (secondLastColon === -1) return null;
+
+  const scriptUrl = line.slice(0, secondLastColon);
+  const lineStr = line.slice(secondLastColon + 1, lastColon);
+  const colStr = line.slice(lastColon + 1);
+
+  const lineNumber = parseInt(lineStr, 10);
+  const columnNumber = parseInt(colStr, 10);
 
   if (!scriptUrl || isNaN(lineNumber) || isNaN(columnNumber)) return null;
 
   return {
-    functionName: rawFunc && rawFunc.trim() ? rawFunc.trim() : 'anonymous',
+    functionName: 'anonymous',
     scriptUrl,
     lineNumber,
     columnNumber,
@@ -30,18 +65,31 @@ function parseV8Frame(trimmed: string): StackFrame | null {
 }
 
 function parseGeckoWebKitFrame(trimmed: string): StackFrame | null {
-  const match = GECKO_WEBKIT_PATTERN.exec(trimmed);
-  if (!match) return null;
+  const atIdx = trimmed.indexOf('@');
+  let funcPart = 'anonymous';
+  let locPart = trimmed;
 
-  const rawFunc = match[1];
-  const scriptUrl = match[2];
-  const lineNumber = parseInt(match[3], 10);
-  const columnNumber = parseInt(match[4], 10);
+  if (atIdx !== -1) {
+    funcPart = trimmed.slice(0, atIdx).trim() || 'anonymous';
+    locPart = trimmed.slice(atIdx + 1).trim();
+  }
+
+  const lastColon = locPart.lastIndexOf(':');
+  if (lastColon === -1) return null;
+  const secondLastColon = locPart.lastIndexOf(':', lastColon - 1);
+  if (secondLastColon === -1) return null;
+
+  const scriptUrl = locPart.slice(0, secondLastColon);
+  const lineStr = locPart.slice(secondLastColon + 1, lastColon);
+  const colStr = locPart.slice(lastColon + 1);
+
+  const lineNumber = parseInt(lineStr, 10);
+  const columnNumber = parseInt(colStr, 10);
 
   if (!scriptUrl || isNaN(lineNumber) || isNaN(columnNumber)) return null;
 
   return {
-    functionName: rawFunc && rawFunc.trim() ? rawFunc.trim() : 'anonymous',
+    functionName: funcPart,
     scriptUrl,
     lineNumber,
     columnNumber,
