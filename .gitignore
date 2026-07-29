@@ -1,0 +1,19 @@
+# Dependencies
+node_modules/
+
+# WXT & Build outputs
+.wxt/
+.output/
+dist/
+
+# OS & IDE files
+.DS_Store
+Thumbs.db
+.vscode/
+.idea/
+*.log
+
+# Subagent & Test temporary files
+.agents/
+.stryker-tmp/
+reports/
