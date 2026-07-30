@@ -188,6 +188,69 @@ export default function App() {
     setPerfMetrics(metrics);
   };
 
+  const handleUpdateStorageEntry = async (key: string, newValue: string) => {
+    if (typeof chrome !== 'undefined' && chrome.tabs?.query) {
+      const [tab] = await chrome.tabs.query({ active: true, currentWindow: true });
+      if (tab?.id) {
+        if (storageType === 'cookie') {
+          if (chrome.cookies) {
+            await chrome.cookies.set({
+              url: tab.url || currentUrl,
+              name: key,
+              value: newValue,
+            });
+          }
+        } else {
+          const targetStore = storageType === 'session' ? 'sessionStorage' : 'localStorage';
+          await chrome.scripting.executeScript({
+            target: { tabId: tab.id },
+            func: (storeName: string, k: string, v: string) => {
+              const store = storeName === 'sessionStorage' ? window.sessionStorage : window.localStorage;
+              store.setItem(k, v);
+              window.dispatchEvent(new StorageEvent('storage', { key: k, newValue: v }));
+            },
+            args: [targetStore, key, newValue],
+          });
+        }
+      }
+    } else {
+      if (storageType === 'local') localStorage.setItem(key, newValue);
+      else if (storageType === 'session') sessionStorage.setItem(key, newValue);
+    }
+    await fetchStorageData();
+  };
+
+  const handleDeleteStorageEntry = async (key: string) => {
+    if (typeof chrome !== 'undefined' && chrome.tabs?.query) {
+      const [tab] = await chrome.tabs.query({ active: true, currentWindow: true });
+      if (tab?.id) {
+        if (storageType === 'cookie') {
+          if (chrome.cookies) {
+            await chrome.cookies.remove({
+              url: tab.url || currentUrl,
+              name: key,
+            });
+          }
+        } else {
+          const targetStore = storageType === 'session' ? 'sessionStorage' : 'localStorage';
+          await chrome.scripting.executeScript({
+            target: { tabId: tab.id },
+            func: (storeName: string, k: string) => {
+              const store = storeName === 'sessionStorage' ? window.sessionStorage : window.localStorage;
+              store.removeItem(k);
+              window.dispatchEvent(new StorageEvent('storage', { key: k, newValue: null }));
+            },
+            args: [targetStore, key],
+          });
+        }
+      }
+    } else {
+      if (storageType === 'local') localStorage.removeItem(key);
+      else if (storageType === 'session') sessionStorage.removeItem(key);
+    }
+    await fetchStorageData();
+  };
+
   useEffect(() => {
     fetchStorageData();
   }, [storageType]);
@@ -578,7 +641,11 @@ console.log('LocalStorage State:', data);`;
           <div style={{ fontSize: 11, color: '#94a3b8', marginBottom: 6 }}>
             Echte Daten der Seite ({gridRows.length.toLocaleString()} Einträge):
           </div>
-          <VirtualizedDataGrid rows={gridRows} />
+          <VirtualizedDataGrid
+            rows={gridRows}
+            onUpdateEntry={handleUpdateStorageEntry}
+            onDeleteEntry={handleDeleteStorageEntry}
+          />
         </main>
       )}
 

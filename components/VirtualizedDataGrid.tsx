@@ -1,43 +1,59 @@
-import React, { useRef, useState } from 'react';
+import React, { useState, useRef } from 'react';
 import { useVirtualizer } from '@tanstack/react-virtual';
-import { MoreVertical, Copy, Eye, EyeOff, Calendar, Code, Check, ChevronRight, ChevronDown } from 'lucide-react';
+import {
+  MoreVertical,
+  Eye,
+  EyeOff,
+  Code,
+  Calendar,
+  Copy,
+  Check,
+  ChevronDown,
+  ChevronRight,
+  Edit3,
+  Save,
+  X,
+  Trash2,
+} from 'lucide-react';
 
 export interface GridRow {
   id: number;
   key: string;
   value: string;
-  type: string;
+  type?: string;
   sizeBytes: number;
 }
 
-interface VirtualizedDataGridProps {
+export type DisplayFormat = 'raw' | 'pretty_json' | 'masked' | 'epoch_date';
+
+export interface VirtualizedDataGridProps {
   rows: GridRow[];
+  onUpdateEntry?: (key: string, newValue: string) => Promise<void> | void;
+  onDeleteEntry?: (key: string) => Promise<void> | void;
 }
 
-type DisplayFormat = 'raw' | 'pretty_json' | 'masked' | 'epoch_date';
-
-export default function VirtualizedDataGrid({ rows }: VirtualizedDataGridProps) {
+export default function VirtualizedDataGrid({ rows, onUpdateEntry, onDeleteEntry }: VirtualizedDataGridProps) {
   const parentRef = useRef<HTMLDivElement>(null);
-  const [activeMenuRowId, setActiveMenuRowId] = useState<number | null>(null);
   const [rowFormats, setRowFormats] = useState<Record<number, DisplayFormat>>({});
-  const [expandedRowIds, setExpandedRowIds] = useState<Record<number, boolean>>({});
+  const [activeMenuRowId, setActiveMenuRowId] = useState<number | null>(null);
   const [copiedRowId, setCopiedRowId] = useState<number | null>(null);
   const [copiedCodeRowId, setCopiedCodeRowId] = useState<number | null>(null);
+  const [expandedRowIds, setExpandedRowIds] = useState<Record<number, boolean>>({});
 
-  const toggleRowExpand = (rowId: number) => {
-    setExpandedRowIds((prev) => {
-      const next = { ...prev, [rowId]: !prev[rowId] };
-      rowVirtualizer.measure();
-      return next;
-    });
-  };
+  // On-The-Fly Inline Edit State
+  const [editingRowId, setEditingRowId] = useState<number | null>(null);
+  const [editingValue, setEditingValue] = useState<string>('');
+  const [isSaving, setIsSaving] = useState<boolean>(false);
 
   const rowVirtualizer = useVirtualizer({
     count: rows.length,
     getScrollElement: () => parentRef.current,
     estimateSize: (index) => {
-      const rowId = rows[index]?.id;
-      return expandedRowIds[rowId] ? 160 : 40;
+      const id = rows[index]?.id;
+      const isExpanded = expandedRowIds[id];
+      const isEditing = editingRowId === id;
+      if (isEditing) return 160;
+      return isExpanded ? 190 : 40;
     },
     overscan: 10,
   });
@@ -62,6 +78,43 @@ export default function VirtualizedDataGrid({ rows }: VirtualizedDataGridProps) 
     navigator.clipboard.writeText(text);
     setCopiedCodeRowId(rowId);
     setTimeout(() => setCopiedCodeRowId(null), 1500);
+  };
+
+  const toggleRowExpand = (rowId: number) => {
+    setExpandedRowIds((prev) => ({ ...prev, [rowId]: !prev[rowId] }));
+  };
+
+  const startEditing = (row: GridRow) => {
+    setEditingRowId(row.id);
+    setEditingValue(row.value);
+    setActiveMenuRowId(null);
+    setExpandedRowIds((prev) => ({ ...prev, [row.id]: true }));
+  };
+
+  const cancelEditing = () => {
+    setEditingRowId(null);
+    setEditingValue('');
+  };
+
+  const handleSaveEdit = async (row: GridRow) => {
+    if (!onUpdateEntry) return;
+    setIsSaving(true);
+    try {
+      await onUpdateEntry(row.key, editingValue);
+      setEditingRowId(null);
+    } catch (err) {
+      console.error('Error saving storage entry:', err);
+    } finally {
+      setIsSaving(false);
+    }
+  };
+
+  const handleDelete = async (row: GridRow) => {
+    if (!onDeleteEntry) return;
+    if (confirm(`Möchtest du den Eintrag "${row.key}" wirklich löschen?`)) {
+      await onDeleteEntry(row.key);
+      setActiveMenuRowId(null);
+    }
   };
 
   const renderFormattedValue = (row: GridRow, format: DisplayFormat) => {
@@ -112,9 +165,11 @@ export default function VirtualizedDataGrid({ rows }: VirtualizedDataGridProps) 
       >
         {rowVirtualizer.getVirtualItems().map((virtualRow) => {
           const row = rows[virtualRow.index];
+          if (!row) return null;
           const currentFormat = rowFormats[row.id] || 'raw';
           const isMenuOpen = activeMenuRowId === row.id;
           const isExpanded = !!expandedRowIds[row.id];
+          const isEditing = editingRowId === row.id;
 
           return (
             <div
@@ -133,7 +188,7 @@ export default function VirtualizedDataGrid({ rows }: VirtualizedDataGridProps) 
                 fontFamily: 'monospace',
                 fontSize: '11px',
                 color: '#e2e8f0',
-                background: isMenuOpen || isExpanded ? '#1e293b' : 'transparent',
+                background: isEditing ? '#0f2744' : isMenuOpen || isExpanded ? '#1e293b' : 'transparent',
                 zIndex: isMenuOpen ? 9999 : 1,
               }}
             >
@@ -181,19 +236,27 @@ export default function VirtualizedDataGrid({ rows }: VirtualizedDataGridProps) 
                       style={{
                         position: 'absolute',
                         right: 0,
-                        top: 28,
+                        top: 24,
                         zIndex: 10001,
                         background: '#090d16',
                         border: '1px solid #38bdf8',
                         borderRadius: 6,
                         boxShadow: '0 10px 30px rgba(0, 0, 0, 0.9)',
                         padding: 4,
-                        minWidth: 170,
+                        minWidth: 180,
                         display: 'flex',
                         flexDirection: 'column',
                         gap: 2,
                       }}
                     >
+                      <button
+                        className="tab-btn"
+                        style={{ fontSize: 11, padding: '6px 10px', justifyContent: 'flex-start', gap: 6, color: '#38bdf8' }}
+                        onClick={() => startEditing(row)}
+                      >
+                        <Edit3 size={12} /> Live Edit Value
+                      </button>
+                      <div style={{ height: 1, background: '#334155', margin: '2px 0' }} />
                       <button
                         className="tab-btn"
                         style={{ fontSize: 11, padding: '6px 10px', justifyContent: 'flex-start', gap: 6, color: '#f8fafc' }}
@@ -231,13 +294,74 @@ export default function VirtualizedDataGrid({ rows }: VirtualizedDataGridProps) 
                         {copiedRowId === row.id ? <Check size={12} /> : <Copy size={12} />}
                         {copiedRowId === row.id ? 'Copied!' : 'Copy Value'}
                       </button>
+                      <button
+                        className="tab-btn"
+                        style={{ fontSize: 11, padding: '6px 10px', justifyContent: 'flex-start', gap: 6, color: '#ef4444' }}
+                        onClick={() => handleDelete(row)}
+                      >
+                        <Trash2 size={12} /> Delete Entry
+                      </button>
                     </div>
                   )}
                 </div>
               </div>
 
-              {/* Expandable Multi-Line Detail Drawer with Copy Button */}
-              {isExpanded && (
+              {/* On-The-Fly Live Edit Form Drawer */}
+              {isEditing ? (
+                <div
+                  style={{
+                    padding: '8px 12px 12px 42px',
+                    background: '#091526',
+                    borderTop: '1px solid #38bdf8',
+                    display: 'flex',
+                    flexDirection: 'column',
+                    gap: 6,
+                  }}
+                >
+                  <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
+                    <span style={{ fontSize: 11, color: '#38bdf8', fontWeight: 700, display: 'flex', alignItems: 'center', gap: 6 }}>
+                      <Edit3 size={13} /> On-The-Fly Edit: {row.key}
+                    </span>
+                    <span style={{ fontSize: 10, color: '#94a3b8' }}>Änderungen wirken sofort auf der Live-Seite</span>
+                  </div>
+                  <textarea
+                    value={editingValue}
+                    onChange={(e) => setEditingValue(e.target.value)}
+                    style={{
+                      width: '100%',
+                      minHeight: 70,
+                      background: '#030712',
+                      border: '1px solid #334155',
+                      borderRadius: 6,
+                      padding: 8,
+                      color: '#f8fafc',
+                      fontFamily: 'monospace',
+                      fontSize: 11,
+                      resize: 'vertical',
+                    }}
+                  />
+                  <div style={{ display: 'flex', gap: 8, justifyContent: 'flex-end' }}>
+                    <button
+                      className="action-btn"
+                      onClick={cancelEditing}
+                      disabled={isSaving}
+                      style={{ padding: '4px 10px', fontSize: 11, color: '#94a3b8', display: 'flex', alignItems: 'center', gap: 4 }}
+                    >
+                      <X size={12} /> Abbrechen
+                    </button>
+                    <button
+                      className="btn-primary"
+                      onClick={() => handleSaveEdit(row)}
+                      disabled={isSaving}
+                      style={{ padding: '4px 12px', fontSize: 11, background: '#10b981', color: '#030712', display: 'flex', alignItems: 'center', gap: 4 }}
+                    >
+                      {isSaving ? <span className="spinner" /> : <Save size={12} />}
+                      {isSaving ? 'Speichert...' : '💾 Speichern & Anwenden'}
+                    </button>
+                  </div>
+                </div>
+              ) : isExpanded ? (
+                /* Expandable Multi-Line Detail Drawer with Copy Button */
                 <div
                   style={{
                     padding: '8px 12px 12px 42px',
@@ -255,14 +379,24 @@ export default function VirtualizedDataGrid({ rows }: VirtualizedDataGridProps) 
                   </div>
                   <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
                     <span style={{ fontSize: 11, color: '#cbd5e1', fontWeight: 600 }}>Un-truncated Payload Value:</span>
-                    <button
-                      className="action-btn"
-                      title="Copy payload to clipboard"
-                      onClick={() => handleCodeCopy(row.id, row.value)}
-                      style={{ color: copiedCodeRowId === row.id ? '#10b981' : '#38bdf8', padding: '2px 6px', fontSize: 10, background: '#030712', borderRadius: 4, border: '1px solid #1e293b' }}
-                    >
-                      {copiedCodeRowId === row.id ? <Check size={12} /> : <Copy size={12} />}
-                    </button>
+                    <div style={{ display: 'flex', gap: 6 }}>
+                      <button
+                        className="action-btn"
+                        title="Edit value"
+                        onClick={() => startEditing(row)}
+                        style={{ color: '#38bdf8', padding: '2px 6px', fontSize: 10, background: '#030712', borderRadius: 4, border: '1px solid #1e293b', display: 'flex', alignItems: 'center', gap: 4 }}
+                      >
+                        <Edit3 size={11} /> Edit
+                      </button>
+                      <button
+                        className="action-btn"
+                        title="Copy payload to clipboard"
+                        onClick={() => handleCodeCopy(row.id, row.value)}
+                        style={{ color: copiedCodeRowId === row.id ? '#10b981' : '#38bdf8', padding: '2px 6px', fontSize: 10, background: '#030712', borderRadius: 4, border: '1px solid #1e293b' }}
+                      >
+                        {copiedCodeRowId === row.id ? <Check size={12} /> : <Copy size={12} />}
+                      </button>
+                    </div>
                   </div>
                   <pre
                     style={{
@@ -282,7 +416,7 @@ export default function VirtualizedDataGrid({ rows }: VirtualizedDataGridProps) 
                     {renderFormattedValue(row, currentFormat)}
                   </pre>
                 </div>
-              )}
+              ) : null}
             </div>
           );
         })}
