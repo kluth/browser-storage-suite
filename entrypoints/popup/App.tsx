@@ -23,11 +23,20 @@ export default function App() {
   const [searchQuery, setSearchQuery] = useState<string>('');
   const [items, setItems] = useState<{ key: string; value: string }[]>([]);
   const [cookies, setCookies] = useState<{ name: string; value: string }[]>([]);
-  const [toastMessage, setToastMessage] = useState<{ text: string; type: 'success' | 'error' } | null>(null);
+  const [toastMessage, setToastMessage] = useState<{ text: string; type: 'success' | 'error'; offerReload?: boolean } | null>(null);
 
-  const showToast = (text: string, type: 'success' | 'error' = 'success') => {
-    setToastMessage({ text, type });
-    setTimeout(() => setToastMessage(null), 3500);
+  const showToast = (text: string, type: 'success' | 'error' = 'success', offerReload: boolean = false) => {
+    setToastMessage({ text, type, offerReload });
+    setTimeout(() => setToastMessage(null), 6000);
+  };
+
+  const handleReloadActiveTab = async () => {
+    if (typeof chrome !== 'undefined' && chrome.tabs?.query) {
+      const [tab] = await chrome.tabs.query({ active: true, currentWindow: true });
+      if (tab?.id) {
+        chrome.tabs.reload(tab.id);
+      }
+    }
   };
   const [loading, setLoading] = useState<boolean>(true);
   const [loadingStep, setLoadingStep] = useState<string>('Verbindung zu aktivem Tab wird hergestellt...');
@@ -227,6 +236,42 @@ export default function App() {
                         url: window.location.href,
                       })
                     );
+                    window.dispatchEvent(new CustomEvent('storage-updated', { detail: { key: k, value: v } }));
+
+                    // Smart Live Theme & DOM Class Syncing
+                    const lowerKey = k.toLowerCase();
+                    const lowerVal = v.toLowerCase();
+                    const isTheme = lowerKey.includes('theme') || lowerKey.includes('dark') || lowerKey.includes('mode') || lowerKey.includes('color');
+
+                    if (isTheme) {
+                      const isDark = lowerVal.includes('dark') || lowerVal === 'true' || lowerVal === '1';
+                      const isLight = lowerVal.includes('light') || lowerVal === 'false' || lowerVal === '0' || lowerVal === 'compact';
+
+                      const htmlEl = document.documentElement;
+                      const bodyEl = document.body;
+
+                      if (isDark) {
+                        htmlEl.setAttribute('dark', 'true');
+                        htmlEl.classList.add('dark');
+                        htmlEl.classList.remove('light');
+                        htmlEl.style.colorScheme = 'dark';
+                        if (bodyEl) bodyEl.classList.add('dark');
+                      } else if (isLight) {
+                        htmlEl.removeAttribute('dark');
+                        htmlEl.setAttribute('dark', 'false');
+                        htmlEl.classList.add('light');
+                        htmlEl.classList.remove('dark');
+                        htmlEl.style.colorScheme = 'light';
+                        if (bodyEl) bodyEl.classList.remove('dark');
+                      }
+
+                      // YouTube specific <ytd-app> DOM element sync
+                      const ytdApp = document.querySelector('ytd-app');
+                      if (ytdApp) {
+                        if (isDark) ytdApp.setAttribute('dark', '');
+                        else ytdApp.removeAttribute('dark');
+                      }
+                    }
                   } catch (e) {
                     console.error('Error mutating storage in MAIN world:', e);
                   }
@@ -241,7 +286,7 @@ export default function App() {
         else if (storageType === 'session') sessionStorage.setItem(key, newValue);
       }
 
-      showToast(`✅ "${key}" auf "${newValue}" geändert & StorageEvent gefeuert!`, 'success');
+      showToast(`✅ "${key}" auf "${newValue}" geändert & DOM synchronisiert!`, 'success', true);
       await fetchStorageData();
     } catch (err: any) {
       showToast(`❌ Fehler beim Speichern: ${err?.message || err}`, 'error');
@@ -421,7 +466,18 @@ console.log('LocalStorage State:', data);`;
             fontFamily: 'monospace',
           }}
         >
-          <span>{toastMessage.text}</span>
+          <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
+            <span>{toastMessage.text}</span>
+            {toastMessage.offerReload && (
+              <button
+                onClick={handleReloadActiveTab}
+                className="action-btn"
+                style={{ background: '#38bdf8', color: '#030712', fontSize: 10, padding: '2px 6px', borderRadius: 4, fontWeight: 700 }}
+              >
+                🔄 Tab neu laden
+              </button>
+            )}
+          </div>
           <button
             onClick={() => setToastMessage(null)}
             style={{ background: 'none', border: 'none', color: '#ffffff', cursor: 'pointer', fontSize: 12 }}
