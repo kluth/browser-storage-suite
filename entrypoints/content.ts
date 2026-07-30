@@ -5,8 +5,8 @@ export default defineContentScript({
   main() {
     console.log('[Browser Storage Suite] Content script active on:', window.location.href);
 
-    // Listen for storage queries from the popup or background script
-    chrome.runtime.onMessage.addListener((message, sender, sendResponse) => {
+    // Listen for storage queries and mutations from popup
+    chrome.runtime.onMessage.addListener((message, _sender, sendResponse) => {
       if (message.type === 'GET_STORAGE_DATA') {
         const local: Record<string, string> = {};
         const session: Record<string, string> = {};
@@ -40,6 +40,32 @@ export default defineContentScript({
       if (message.type === 'SET_LOCAL_STORAGE') {
         try {
           localStorage.setItem(message.key, message.value);
+          window.dispatchEvent(
+            new StorageEvent('storage', {
+              key: message.key,
+              newValue: message.value,
+              storageArea: localStorage,
+              url: window.location.href,
+            })
+          );
+          sendResponse({ success: true });
+        } catch (err) {
+          sendResponse({ success: false, error: String(err) });
+        }
+        return true;
+      }
+
+      if (message.type === 'SET_SESSION_STORAGE') {
+        try {
+          sessionStorage.setItem(message.key, message.value);
+          window.dispatchEvent(
+            new StorageEvent('storage', {
+              key: message.key,
+              newValue: message.value,
+              storageArea: sessionStorage,
+              url: window.location.href,
+            })
+          );
           sendResponse({ success: true });
         } catch (err) {
           sendResponse({ success: false, error: String(err) });
@@ -50,6 +76,32 @@ export default defineContentScript({
       if (message.type === 'DELETE_LOCAL_STORAGE') {
         try {
           localStorage.removeItem(message.key);
+          window.dispatchEvent(
+            new StorageEvent('storage', {
+              key: message.key,
+              newValue: null,
+              storageArea: localStorage,
+              url: window.location.href,
+            })
+          );
+          sendResponse({ success: true });
+        } catch (err) {
+          sendResponse({ success: false, error: String(err) });
+        }
+        return true;
+      }
+
+      if (message.type === 'DELETE_SESSION_STORAGE') {
+        try {
+          sessionStorage.removeItem(message.key);
+          window.dispatchEvent(
+            new StorageEvent('storage', {
+              key: message.key,
+              newValue: null,
+              storageArea: sessionStorage,
+              url: window.location.href,
+            })
+          );
           sendResponse({ success: true });
         } catch (err) {
           sendResponse({ success: false, error: String(err) });

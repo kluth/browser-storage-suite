@@ -23,6 +23,12 @@ export default function App() {
   const [searchQuery, setSearchQuery] = useState<string>('');
   const [items, setItems] = useState<{ key: string; value: string }[]>([]);
   const [cookies, setCookies] = useState<{ name: string; value: string }[]>([]);
+  const [toastMessage, setToastMessage] = useState<{ text: string; type: 'success' | 'error' } | null>(null);
+
+  const showToast = (text: string, type: 'success' | 'error' = 'success') => {
+    setToastMessage({ text, type });
+    setTimeout(() => setToastMessage(null), 3500);
+  };
   const [loading, setLoading] = useState<boolean>(true);
   const [loadingStep, setLoadingStep] = useState<string>('Verbindung zu aktivem Tab wird hergestellt...');
 
@@ -189,66 +195,110 @@ export default function App() {
   };
 
   const handleUpdateStorageEntry = async (key: string, newValue: string) => {
-    if (typeof chrome !== 'undefined' && chrome.tabs?.query) {
-      const [tab] = await chrome.tabs.query({ active: true, currentWindow: true });
-      if (tab?.id) {
-        if (storageType === 'cookie') {
-          if (chrome.cookies) {
-            await chrome.cookies.set({
-              url: tab.url || currentUrl,
-              name: key,
-              value: newValue,
-            });
+    try {
+      if (typeof chrome !== 'undefined' && chrome.tabs?.query) {
+        const [tab] = await chrome.tabs.query({ active: true, currentWindow: true });
+        if (tab?.id) {
+          if (storageType === 'cookie') {
+            if (chrome.cookies) {
+              await chrome.cookies.set({
+                url: tab.url || currentUrl,
+                name: key,
+                value: newValue,
+              });
+            }
+          } else {
+            const targetType = storageType === 'session' ? 'SET_SESSION_STORAGE' : 'SET_LOCAL_STORAGE';
+            chrome.tabs.sendMessage(tab.id, { type: targetType, key, value: newValue });
+
+            if (chrome.scripting) {
+              await chrome.scripting.executeScript({
+                target: { tabId: tab.id },
+                world: 'MAIN',
+                func: (storeName: string, k: string, v: string) => {
+                  try {
+                    const store = storeName === 'sessionStorage' ? window.sessionStorage : window.localStorage;
+                    store.setItem(k, v);
+                    window.dispatchEvent(
+                      new StorageEvent('storage', {
+                        key: k,
+                        newValue: v,
+                        storageArea: store,
+                        url: window.location.href,
+                      })
+                    );
+                  } catch (e) {
+                    console.error('Error mutating storage in MAIN world:', e);
+                  }
+                },
+                args: [storageType === 'session' ? 'sessionStorage' : 'localStorage', key, newValue],
+              });
+            }
           }
-        } else {
-          const targetStore = storageType === 'session' ? 'sessionStorage' : 'localStorage';
-          await chrome.scripting.executeScript({
-            target: { tabId: tab.id },
-            func: (storeName: string, k: string, v: string) => {
-              const store = storeName === 'sessionStorage' ? window.sessionStorage : window.localStorage;
-              store.setItem(k, v);
-              window.dispatchEvent(new StorageEvent('storage', { key: k, newValue: v }));
-            },
-            args: [targetStore, key, newValue],
-          });
         }
+      } else {
+        if (storageType === 'local') localStorage.setItem(key, newValue);
+        else if (storageType === 'session') sessionStorage.setItem(key, newValue);
       }
-    } else {
-      if (storageType === 'local') localStorage.setItem(key, newValue);
-      else if (storageType === 'session') sessionStorage.setItem(key, newValue);
+
+      showToast(`✅ "${key}" auf "${newValue}" geändert & StorageEvent gefeuert!`, 'success');
+      await fetchStorageData();
+    } catch (err: any) {
+      showToast(`❌ Fehler beim Speichern: ${err?.message || err}`, 'error');
     }
-    await fetchStorageData();
   };
 
   const handleDeleteStorageEntry = async (key: string) => {
-    if (typeof chrome !== 'undefined' && chrome.tabs?.query) {
-      const [tab] = await chrome.tabs.query({ active: true, currentWindow: true });
-      if (tab?.id) {
-        if (storageType === 'cookie') {
-          if (chrome.cookies) {
-            await chrome.cookies.remove({
-              url: tab.url || currentUrl,
-              name: key,
-            });
+    try {
+      if (typeof chrome !== 'undefined' && chrome.tabs?.query) {
+        const [tab] = await chrome.tabs.query({ active: true, currentWindow: true });
+        if (tab?.id) {
+          if (storageType === 'cookie') {
+            if (chrome.cookies) {
+              await chrome.cookies.remove({
+                url: tab.url || currentUrl,
+                name: key,
+              });
+            }
+          } else {
+            const targetType = storageType === 'session' ? 'DELETE_SESSION_STORAGE' : 'DELETE_LOCAL_STORAGE';
+            chrome.tabs.sendMessage(tab.id, { type: targetType, key });
+
+            if (chrome.scripting) {
+              await chrome.scripting.executeScript({
+                target: { tabId: tab.id },
+                world: 'MAIN',
+                func: (storeName: string, k: string) => {
+                  try {
+                    const store = storeName === 'sessionStorage' ? window.sessionStorage : window.localStorage;
+                    store.removeItem(k);
+                    window.dispatchEvent(
+                      new StorageEvent('storage', {
+                        key: k,
+                        newValue: null,
+                        storageArea: store,
+                        url: window.location.href,
+                      })
+                    );
+                  } catch (e) {
+                    console.error('Error deleting storage in MAIN world:', e);
+                  }
+                },
+                args: [storageType === 'session' ? 'sessionStorage' : 'localStorage', key],
+              });
+            }
           }
-        } else {
-          const targetStore = storageType === 'session' ? 'sessionStorage' : 'localStorage';
-          await chrome.scripting.executeScript({
-            target: { tabId: tab.id },
-            func: (storeName: string, k: string) => {
-              const store = storeName === 'sessionStorage' ? window.sessionStorage : window.localStorage;
-              store.removeItem(k);
-              window.dispatchEvent(new StorageEvent('storage', { key: k, newValue: null }));
-            },
-            args: [targetStore, key],
-          });
         }
+      } else {
+        if (storageType === 'local') localStorage.removeItem(key);
+        else if (storageType === 'session') sessionStorage.removeItem(key);
       }
-    } else {
-      if (storageType === 'local') localStorage.removeItem(key);
-      else if (storageType === 'session') sessionStorage.removeItem(key);
+
+      showToast(`🗑️ "${key}" erfolgreich gelöscht`, 'success');
+      await fetchStorageData();
+    } catch (err: any) {
+      showToast(`❌ Fehler beim Löschen: ${err?.message || err}`, 'error');
     }
-    await fetchStorageData();
   };
 
   const [observedKeys, setObservedKeys] = useState<Record<string, boolean>>({});
@@ -354,6 +404,32 @@ console.log('LocalStorage State:', data);`;
           <span className="target-badge">{currentBrowser}</span>
         </div>
       </header>
+
+      {/* Toast Notification Feedback Banner */}
+      {toastMessage && (
+        <div
+          style={{
+            padding: '6px 12px',
+            background: toastMessage.type === 'success' ? '#065f46' : '#991b1b',
+            borderBottom: `1px solid ${toastMessage.type === 'success' ? '#10b981' : '#f43f5e'}`,
+            color: '#ffffff',
+            fontSize: 11,
+            fontWeight: 600,
+            display: 'flex',
+            alignItems: 'center',
+            justifyContent: 'space-between',
+            fontFamily: 'monospace',
+          }}
+        >
+          <span>{toastMessage.text}</span>
+          <button
+            onClick={() => setToastMessage(null)}
+            style={{ background: 'none', border: 'none', color: '#ffffff', cursor: 'pointer', fontSize: 12 }}
+          >
+            ✕
+          </button>
+        </div>
+      )}
 
       {/* Primary Navigation Tabs */}
       <nav className="tabs">
