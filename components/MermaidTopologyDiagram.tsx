@@ -235,6 +235,21 @@ export default function MermaidTopologyDiagram({ entries, currentUrl = 'https://
   const [showCode, setShowCode] = useState<boolean>(false);
   const [copied, setCopied] = useState<boolean>(false);
   const [focusedPath, setFocusedPath] = useState<string[]>([]);
+  const containerRef = useRef<HTMLDivElement>(null);
+  const [containerWidth, setContainerWidth] = useState<number>(640);
+
+  useEffect(() => {
+    if (!containerRef.current) return;
+    const observer = new ResizeObserver((resEntries) => {
+      for (const entry of resEntries) {
+        if (entry.contentRect.width > 0) {
+          setContainerWidth(Math.floor(entry.contentRect.width));
+        }
+      }
+    });
+    observer.observe(containerRef.current);
+    return () => observer.disconnect();
+  }, []);
 
   const cleanDomain = currentUrl.replace(/^https?:\/\//, '') || 'Active Page';
 
@@ -269,7 +284,7 @@ export default function MermaidTopologyDiagram({ entries, currentUrl = 'https://
   ];
 
   const renderSvgDiagram = () => {
-    const width = 640;
+    const width = Math.max(320, containerWidth);
     const height = 420;
     const cx = width / 2;
     const cy = height / 2;
@@ -420,15 +435,14 @@ export default function MermaidTopologyDiagram({ entries, currentUrl = 'https://
       const eng = engines.find((e) => e.name.toLowerCase() === engName.toLowerCase()) || engines[0];
 
       if (layoutType === 'subgraph_cluster') {
-        const colWidth = Math.max(270, Math.floor((width - 45) / 2));
-        const col1X = 15;
-        const col2X = col1X + colWidth + 15;
+        const cols = Math.max(1, Math.floor((width - 30) / 285));
+        const colWidth = Math.floor((width - 30 - (cols - 1) * 15) / cols);
 
-        const rowCount = Math.ceil(activeItems.length / 2);
-        const itemYStep = 75;
+        const rowCount = Math.ceil(activeItems.length / cols);
+        const itemYStep = 80;
         const headerHeight = 44;
-        const svgCalculatedHeight = Math.max(420, headerHeight + 20 + Math.max(rowCount, 1) * itemYStep + 20);
-        const canvasWidth = Math.max(width, col2X + colWidth + 15);
+        const svgCalculatedHeight = Math.max(420, headerHeight + 25 + Math.max(rowCount, 1) * itemYStep + 20);
+        const canvasWidth = Math.max(width, cols * (colWidth + 15) + 15);
 
         return (
           <div style={{ width: '100%', borderRadius: 8, border: '1px solid #1e293b', background: '#030712' }}>
@@ -472,15 +486,15 @@ export default function MermaidTopologyDiagram({ entries, currentUrl = 'https://
                 </text>
               ) : (
                 activeItems.map((item, idx) => {
-                  const colIdx = idx % 2;
-                  const rowIdx = Math.floor(idx / 2);
-                  const posX = colIdx === 0 ? col1X : col2X;
+                  const colIdx = idx % cols;
+                  const rowIdx = Math.floor(idx / cols);
+                  const posX = 15 + colIdx * (colWidth + 15);
                   const posY = 75 + rowIdx * itemYStep;
                   const formattedVal = formatValuePayload(item.value).replace(/[\r\n]+/g, ' ');
                   const byteSize = new Blob([item.key + item.value]).size;
 
                   return (
-                    <foreignObject key={idx} x={posX} y={posY} width={colWidth} height="68">
+                    <foreignObject key={idx} x={posX} y={posY} width={colWidth} height="72">
                       <div
                         onDoubleClick={(e) => {
                           e.stopPropagation();
@@ -538,15 +552,17 @@ export default function MermaidTopologyDiagram({ entries, currentUrl = 'https://
                             background: '#030712',
                             border: '1px solid #1e293b',
                             borderRadius: 4,
-                            padding: '4px 8px',
+                            padding: '5px 8px',
                             color: '#94a3b8',
                             fontSize: 9.5,
                             lineHeight: 1.45,
                             fontFamily: 'Consolas, Monaco, "Andale Mono", monospace',
                             overflow: 'hidden',
-                            textOverflow: 'ellipsis',
-                            whiteSpace: 'nowrap',
                             boxSizing: 'border-box',
+                            display: '-webkit-box',
+                            WebkitLineClamp: 2,
+                            WebkitBoxOrient: 'vertical',
+                            wordBreak: 'break-all',
                           }}
                         >
                           {formattedVal}
@@ -627,41 +643,28 @@ export default function MermaidTopologyDiagram({ entries, currentUrl = 'https://
 
     // D. LEVEL 0: MAIN GLOBAL DIAGRAM VIEWS
     if (layoutType === 'subgraph_cluster') {
-      const colWidth = Math.max(260, Math.floor((width - 45) / 2));
-      const col1X = 15;
-      const col2X = col1X + colWidth + 15;
+      const cols = Math.max(1, Math.floor((width - 30) / 285));
+      const colWidth = Math.floor((width - 30 - (cols - 1) * 15) / cols);
 
+      const colYOffsets = new Array(cols).fill(15);
       const positions: { x: number; y: number; height: number }[] = [];
       const MAX_PREVIEW_ITEMS = 5;
 
-      let leftY = 15;
       engines.forEach((eng, idx) => {
+        const colIdx = idx % cols;
         const matched = entries.filter((e) => e.target.toLowerCase().includes(eng.name.toLowerCase()));
         const displayItems = matched.slice(0, MAX_PREVIEW_ITEMS);
         const hasMore = matched.length > MAX_PREVIEW_ITEMS;
         const clusterHeight = 44 + Math.max(displayItems.length, 1) * 64 + (hasMore ? 40 : 0) + 10;
+        const posX = 15 + colIdx * (colWidth + 15);
+        const posY = colYOffsets[colIdx];
 
-        if (idx % 2 === 0) {
-          positions[idx] = { x: col1X, y: leftY, height: clusterHeight };
-          leftY += clusterHeight + 15;
-        }
+        positions[idx] = { x: posX, y: posY, height: clusterHeight };
+        colYOffsets[colIdx] += clusterHeight + 15;
       });
 
-      let rightY = 15;
-      engines.forEach((eng, idx) => {
-        const matched = entries.filter((e) => e.target.toLowerCase().includes(eng.name.toLowerCase()));
-        const displayItems = matched.slice(0, MAX_PREVIEW_ITEMS);
-        const hasMore = matched.length > MAX_PREVIEW_ITEMS;
-        const clusterHeight = 44 + Math.max(displayItems.length, 1) * 64 + (hasMore ? 40 : 0) + 10;
-
-        if (idx % 2 === 1) {
-          positions[idx] = { x: col2X, y: rightY, height: clusterHeight };
-          rightY += clusterHeight + 15;
-        }
-      });
-
-      const svgCalculatedHeight = Math.max(420, Math.max(leftY, rightY) + 15);
-      const canvasWidth = Math.max(width, col2X + colWidth + 15);
+      const svgCalculatedHeight = Math.max(420, Math.max(...colYOffsets) + 15);
+      const canvasWidth = Math.max(width, cols * (colWidth + 15) + 15);
 
       return (
         <div style={{ width: '100%', borderRadius: 8, border: '1px solid #1e293b', background: '#030712' }}>
@@ -726,7 +729,7 @@ export default function MermaidTopologyDiagram({ entries, currentUrl = 'https://
                     </div>
                   </foreignObject>
 
-                  {/* Cluster Items (Max 5 in 2-Column Overview) */}
+                  {/* Cluster Items (Max 5 in Multi-Column Overview) */}
                   {matched.length === 0 ? (
                     <text x="15" y="60" fill="#64748b" fontSize="9" fontStyle="italic">
                       (Keine Einträge in diesem Cluster)
@@ -1006,6 +1009,7 @@ export default function MermaidTopologyDiagram({ entries, currentUrl = 'https://
 
   return (
     <div
+      ref={containerRef}
       style={{
         display: 'flex',
         flexDirection: 'column',
