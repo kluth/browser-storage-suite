@@ -1,0 +1,75 @@
+openapi: 3.0.3
+info:
+  title: Browser Storage Suite REST API
+  description: OpenAPI 3.0 compliant REST specification for cross-browser storage operations (LocalStorage, SessionStorage, Cookies, IndexedDB).
+  version: 1.0.0
+paths:
+  /api/v1/storage/{target}:
+    get:
+      summary: Retrieve all entries for a specific storage target
+      parameters:
+        - name: target
+          in: path
+          required: true
+          schema:
+            type: string
+            enum: [localStorage, sessionStorage, cookie, indexedDB]
+      responses:
+        '200':
+          description: List of storage key-value pairs
+          content:
+            application/json:
+              schema:
+                type: array
+                items:
+                  $ref: '#/components/schemas/StorageEntry'
+    post:
+      summary: Save or update a key-value entry in target storage
+      parameters:
+        - name: target
+          in: path
+          required: true
+          schema:
+            type: string
+            enum: [localStorage, sessionStorage, cookie, indexedDB]
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/StorageEntry'
+      responses:
+        '201':
+          description: Entry saved successfully
+  /api/v1/storage/{target}/{key}:
+    delete:
+      summary: Delete a specific storage key
+      parameters:
+        - name: target
+          in: path
+          required: true
+          schema:
+            type: string
+            enum: [localStorage, sessionStorage, cookie, indexedDB]
+        - name: key
+          in: path
+          required: true
+          schema:
+            type: string
+      responses:
+        '200':
+          description: Key removed successfully
+components:
+  schemas:
+    StorageEntry:
+      type: object
+      required:
+        - key:
+        - value:
+      properties:
+        key:
+          type: string
+        value:
+          type: string
+        sizeBytes:
+          type: integer
