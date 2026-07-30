@@ -3,6 +3,7 @@ import {
   getNodeColor,
   getDefaultGraphNodes,
   deriveGraphNodesFromEntries,
+  generateExplodingChildNodes,
   checkWebGlSupport,
 } from '../components/SpatialGraphCanvas';
 import { GraphNode } from '../workers/spatialLayoutWorker';
@@ -40,6 +41,14 @@ describe('SpatialGraphCanvas Pure Logic Suite (M2)', () => {
     expect(nodes[0].type).toBe('entity');
     expect(nodes[1].label).toBe('cart_data');
     expect(nodes[1].type).toBe('table');
+  });
+
+  it('should generate exploding child nodes and 3D link connections for a target storage engine', () => {
+    const idbExplosion = generateExplodingChildNodes('node_indexedDB');
+    expect(idbExplosion.nodes.length).toBeGreaterThan(1);
+    expect(idbExplosion.links.length).toBeGreaterThan(0);
+    expect(idbExplosion.nodes.some((n) => n.label.toUpperCase().includes('INDEXEDDB'))).toBe(true);
+    expect(idbExplosion.links[0].source).toBe('node_indexedDB');
   });
 
   it('should evaluate WebGL context availability safely', () => {
