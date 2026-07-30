@@ -208,7 +208,7 @@ export default function App() {
       if (typeof chrome !== 'undefined' && chrome.tabs?.query) {
         const [tab] = await chrome.tabs.query({ active: true, currentWindow: true });
         if (tab?.id) {
-          if (storageType === 'cookie') {
+          if (storageType === 'cookie' || storageType === 'cookies') {
             if (chrome.cookies) {
               await chrome.cookies.set({
                 url: tab.url || currentUrl,
@@ -298,7 +298,7 @@ export default function App() {
       if (typeof chrome !== 'undefined' && chrome.tabs?.query) {
         const [tab] = await chrome.tabs.query({ active: true, currentWindow: true });
         if (tab?.id) {
-          if (storageType === 'cookie') {
+          if (storageType === 'cookie' || storageType === 'cookies') {
             if (chrome.cookies) {
               await chrome.cookies.remove({
                 url: tab.url || currentUrl,
@@ -595,14 +595,111 @@ console.log('LocalStorage State:', data);`;
               </div>
             ) : storageType === 'cookies' ? (
               cookies.length > 0 ? (
-                cookies.map((c) => (
-                  <div className="storage-card" key={c.name}>
-                    <div className="card-header">
-                      <span className="item-key">{c.name}</span>
-                    </div>
-                    <div className="item-value">{c.value}</div>
-                  </div>
-                ))
+                cookies
+                  .filter(
+                    (c) =>
+                      c.name.toLowerCase().includes(searchQuery.toLowerCase()) ||
+                      c.value.toLowerCase().includes(searchQuery.toLowerCase())
+                  )
+                  .map((c) => {
+                    const isExpanded = !!expandedBlameKeys[c.name];
+                    const blame = getStorageDataBlame(c.name, c.value);
+
+                    return (
+                      <div className="storage-card" key={c.name}>
+                        <div className="card-header">
+                          <span className="item-key">{c.name}</span>
+                          <button
+                            className="action-btn"
+                            title="Toggle Data Blame & Provenance"
+                            onClick={() => toggleBlameExpand(c.name)}
+                            style={{ fontSize: 11, display: 'flex', alignItems: 'center', gap: 4, color: isExpanded ? '#38bdf8' : '#94a3b8' }}
+                          >
+                            {isExpanded ? <ChevronDown size={14} /> : <ChevronRight size={14} />} Data Blame
+                          </button>
+                        </div>
+                        <div className="item-value">{c.value}</div>
+
+                        {/* Expandable Data Blaming & History Drawer for Cookies */}
+                        {isExpanded && (
+                          <div
+                            style={{
+                              marginTop: 6,
+                              padding: '8px 10px',
+                              background: '#090d16',
+                              borderRadius: 6,
+                              border: '1px solid #334155',
+                              fontSize: 11,
+                              color: '#cbd5e1',
+                              display: 'flex',
+                              flexDirection: 'column',
+                              gap: 4,
+                            }}
+                          >
+                            <div style={{ fontWeight: 700, color: '#38bdf8', marginBottom: 2, display: 'flex', alignItems: 'center', gap: 6 }}>
+                              <UserCheck size={13} /> Cookie Provenance & Blame
+                            </div>
+                            <div>
+                              <strong>Actor / Source:</strong>{' '}
+                              <span style={{ color: '#a855f7' }}>{blame.actor.name}</span> ({blame.actor.type})
+                            </div>
+
+                            {blame.hasConflictOverwrite && (
+                              <div
+                                style={{
+                                  background: '#450a0a',
+                                  border: '1px solid #ef4444',
+                                  padding: '4px 8px',
+                                  borderRadius: 4,
+                                  color: '#fca5a5',
+                                  fontSize: 10,
+                                  fontWeight: 700,
+                                  display: 'flex',
+                                  alignItems: 'center',
+                                  gap: 6,
+                                }}
+                              >
+                                <span>⚠️ SCRIPT OVERWRITE CONFLICT: Dieser Cookie wurde von verschiedenen Skripten überschrieben!</span>
+                              </div>
+                            )}
+
+                            <div style={{ display: 'flex', justifyContent: 'space-between', marginTop: 4, color: '#94a3b8', fontSize: 10 }}>
+                              <span style={{ display: 'flex', alignItems: 'center', gap: 4 }}>
+                                <Clock size={11} /> Modified: {new Date(blame.lastModifiedAt).toLocaleTimeString()}
+                              </span>
+                              <span style={{ display: 'flex', alignItems: 'center', gap: 4 }}>
+                                <GitCommit size={11} /> Revisions: {blame.revisionCount}
+                              </span>
+                            </div>
+
+                            {blame.historyTimeline && blame.historyTimeline.length > 0 && (
+                              <div style={{ marginTop: 6, display: 'flex', flexDirection: 'column', gap: 4 }}>
+                                <div style={{ fontWeight: 700, color: '#c084fc', fontSize: 10 }}>📜 History Audit Trail ({blame.historyTimeline.length} Revisionen):</div>
+                                {blame.historyTimeline.map((hist) => (
+                                  <div key={hist.id} style={{ background: '#030712', border: '1px solid #1e293b', borderRadius: 4, padding: '4px 6px', fontSize: 10 }}>
+                                    <div style={{ display: 'flex', justifyContent: 'space-between', color: '#38bdf8', fontWeight: 600 }}>
+                                      <span>Rev #{hist.revision} — {hist.actor.name}</span>
+                                      <span style={{ color: '#64748b', fontSize: 9 }}>{new Date(hist.timestamp).toLocaleTimeString()}</span>
+                                    </div>
+                                    {hist.isConflictOverwrite && (
+                                      <div style={{ color: '#f87171', fontWeight: 700, fontSize: 9, marginTop: 2 }}>
+                                        ⚠️ Überschrieb Cookie von: {hist.overwrittenActorName}
+                                      </div>
+                                    )}
+                                    {hist.previousValue !== undefined && (
+                                      <div style={{ fontFamily: 'monospace', color: '#94a3b8', fontSize: 9, marginTop: 2, wordBreak: 'break-all' }}>
+                                        <span style={{ textDecoration: 'line-through', color: '#ef4444' }}>{hist.previousValue}</span> ➔ <span style={{ color: '#10b981' }}>{hist.newValue}</span>
+                                      </div>
+                                    )}
+                                  </div>
+                                ))}
+                              </div>
+                            )}
+                          </div>
+                        )}
+                      </div>
+                    );
+                  })
               ) : (
                 <div className="empty-state">
                   <Cookie size={32} opacity={0.4} />
@@ -668,6 +765,26 @@ console.log('LocalStorage State:', data);`;
                               {blame.actor.stackTraceSnippet}
                             </div>
                           )}
+                          {/* Script Conflict Overwrite Warning Badge */}
+                          {blame.hasConflictOverwrite && (
+                            <div
+                              style={{
+                                background: '#450a0a',
+                                border: '1px solid #ef4444',
+                                padding: '4px 8px',
+                                borderRadius: 4,
+                                color: '#fca5a5',
+                                fontSize: 10,
+                                fontWeight: 700,
+                                display: 'flex',
+                                alignItems: 'center',
+                                gap: 6,
+                              }}
+                            >
+                              <span>⚠️ SCRIPT OVERWRITE CONFLICT: Dieser Wert wurde von verschiedenen Skripten überschrieben!</span>
+                            </div>
+                          )}
+
                           <div style={{ display: 'flex', justifyContent: 'space-between', marginTop: 4, color: '#94a3b8', fontSize: 10 }}>
                             <span style={{ display: 'flex', alignItems: 'center', gap: 4 }}>
                               <Clock size={11} /> Modified: {new Date(blame.lastModifiedAt).toLocaleTimeString()}
@@ -676,9 +793,29 @@ console.log('LocalStorage State:', data);`;
                               <GitCommit size={11} /> Revisions: {blame.revisionCount}
                             </span>
                           </div>
-                          {blame.previousValue && (
-                            <div style={{ marginTop: 4, fontSize: 10, fontFamily: 'monospace' }}>
-                              <span style={{ color: '#f43f5e' }}>- Prev: {blame.previousValue}</span>
+
+                          {/* Full Revision Mutation History Timeline */}
+                          {blame.historyTimeline && blame.historyTimeline.length > 0 && (
+                            <div style={{ marginTop: 6, display: 'flex', flexDirection: 'column', gap: 4 }}>
+                              <div style={{ fontWeight: 700, color: '#c084fc', fontSize: 10 }}>📜 History Audit Trail ({blame.historyTimeline.length} Revisionen):</div>
+                              {blame.historyTimeline.map((hist) => (
+                                <div key={hist.id} style={{ background: '#030712', border: '1px solid #1e293b', borderRadius: 4, padding: '4px 6px', fontSize: 10 }}>
+                                  <div style={{ display: 'flex', justifyContent: 'space-between', color: '#38bdf8', fontWeight: 600 }}>
+                                    <span>Rev #{hist.revision} — {hist.actor.name}</span>
+                                    <span style={{ color: '#64748b', fontSize: 9 }}>{new Date(hist.timestamp).toLocaleTimeString()}</span>
+                                  </div>
+                                  {hist.isConflictOverwrite && (
+                                    <div style={{ color: '#f87171', fontWeight: 700, fontSize: 9, marginTop: 2 }}>
+                                      ⚠️ Überschrieb den Wert von: {hist.overwrittenActorName}
+                                    </div>
+                                  )}
+                                  {hist.previousValue !== undefined && (
+                                    <div style={{ fontFamily: 'monospace', color: '#94a3b8', fontSize: 9, marginTop: 2, wordBreak: 'break-all' }}>
+                                      <span style={{ textDecoration: 'line-through', color: '#ef4444' }}>{hist.previousValue}</span> ➔ <span style={{ color: '#10b981' }}>{hist.newValue}</span>
+                                    </div>
+                                  )}
+                                </div>
+                              ))}
                             </div>
                           )}
                         </div>

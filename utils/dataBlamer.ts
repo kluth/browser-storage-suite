@@ -5,12 +5,25 @@ import { ScriptOrigin, BlameActor, type ActorType } from '../src/domain/model/da
 export type { ActorType };
 export { ScriptOrigin, BlameActor };
 
+export interface MutationHistoryEntry {
+  id: string;
+  revision: number;
+  timestamp: string;
+  previousValue?: string;
+  newValue: string;
+  actor: BlameActor;
+  isConflictOverwrite?: boolean;
+  overwrittenActorName?: string;
+}
+
 export interface DataBlameInfo {
   key: string;
   lastModifiedAt: string;
   actor: BlameActor;
   revisionCount: number;
   previousValue?: string;
+  historyTimeline: MutationHistoryEntry[];
+  hasConflictOverwrite?: boolean;
 }
 
 export type DataBlameError = {
@@ -24,6 +37,7 @@ interface KeyHistory {
   revisionCount: number;
   lastModifiedAt: string;
   actorInfo?: BlameActor;
+  historyTimeline: MutationHistoryEntry[];
 }
 
 function extractFilename(url: string): string {
@@ -148,12 +162,30 @@ export class DataBlameRegistry {
     const previousValue = existing ? existing.currentValue : undefined;
     const actorInfo = buildActorFromStack(rawStack);
 
+    const prevTimeline = existing ? existing.historyTimeline : [];
+    const prevActor = existing ? existing.actorInfo : undefined;
+    const isConflict = !!(prevActor && prevActor.name !== actorInfo.name);
+
+    const historyEntry: MutationHistoryEntry = {
+      id: `${Date.now()}_${Math.random().toString(36).substr(2, 6)}`,
+      revision: revisionCount,
+      timestamp: new Date().toISOString(),
+      previousValue,
+      newValue,
+      actor: actorInfo,
+      isConflictOverwrite: isConflict,
+      overwrittenActorName: isConflict ? prevActor?.name : undefined,
+    };
+
+    const updatedTimeline = [historyEntry, ...prevTimeline].slice(0, 50);
+
     this.history.set(key, {
       currentValue: newValue,
       previousValue,
       revisionCount,
       lastModifiedAt: new Date().toISOString(),
       actorInfo,
+      historyTimeline: updatedTimeline,
     });
   }
 
@@ -163,25 +195,52 @@ export class DataBlameRegistry {
 
       if (!entry) {
         const actorInfo = buildActorFromStack(rawStack);
+        const initialEntry: MutationHistoryEntry = {
+          id: `${Date.now()}_init`,
+          revision: 1,
+          timestamp: new Date().toISOString(),
+          newValue: currentValue,
+          actor: actorInfo,
+        };
         entry = {
           currentValue,
           previousValue: undefined,
           revisionCount: 1,
           lastModifiedAt: new Date().toISOString(),
           actorInfo,
+          historyTimeline: [initialEntry],
         };
         this.history.set(key, entry);
       } else {
         if (currentValue !== entry.currentValue) {
-          entry.previousValue = entry.currentValue;
+          const prevVal = entry.currentValue;
+          const rev = entry.revisionCount + 1;
+          const actorInfo = buildActorFromStack(rawStack);
+          const isConflict = !!(entry.actorInfo && entry.actorInfo.name !== actorInfo.name);
+
+          const newTimelineEntry: MutationHistoryEntry = {
+            id: `${Date.now()}_${Math.random().toString(36).substr(2, 6)}`,
+            revision: rev,
+            timestamp: new Date().toISOString(),
+            previousValue: prevVal,
+            newValue: currentValue,
+            actor: actorInfo,
+            isConflictOverwrite: isConflict,
+            overwrittenActorName: isConflict ? entry.actorInfo?.name : undefined,
+          };
+
+          entry.previousValue = prevVal;
           entry.currentValue = currentValue;
-          entry.revisionCount += 1;
+          entry.revisionCount = rev;
           entry.lastModifiedAt = new Date().toISOString();
-        }
-        if (rawStack) {
+          entry.actorInfo = actorInfo;
+          entry.historyTimeline = [newTimelineEntry, ...entry.historyTimeline].slice(0, 50);
+        } else if (rawStack) {
           entry.actorInfo = buildActorFromStack(rawStack);
         }
       }
+
+      const hasConflict = entry.historyTimeline.some((h) => h.isConflictOverwrite);
 
       const blameInfo: DataBlameInfo = {
         key,
@@ -189,6 +248,8 @@ export class DataBlameRegistry {
         actor: entry.actorInfo || buildActorFromStack(rawStack),
         revisionCount: entry.revisionCount,
         previousValue: entry.previousValue,
+        historyTimeline: entry.historyTimeline,
+        hasConflictOverwrite: hasConflict,
       };
 
       return Result.ok(blameInfo);
