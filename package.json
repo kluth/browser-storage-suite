@@ -24,8 +24,10 @@
     "@react-three/drei": "^10.0.0",
     "@react-three/fiber": "^9.0.0",
     "@tanstack/react-virtual": "^3.13.0",
+    "es-toolkit": "^1.50.0",
     "fast-check": "^3.23.2",
     "lucide-react": "^0.475.0",
+    "mermaid": "^11.16.0",
     "react": "^19.0.0",
     "react-dom": "^19.0.0",
     "three": "^0.173.0"

@@ -9,14 +9,16 @@ import { getStorageDataBlame, DataBlameInfo } from '@/utils/dataBlamer';
 import { predictPagePresets, PredictedPreset } from '@/utils/presetPredictor';
 import { probeBackendEndpoint, DiscoveredBackend } from '@/utils/backendDiscoverer';
 
-// Lazy-load 3D WebGL Canvas for instant Popup startup (<50ms)
+// Lazy-load 3D Canvas & Mermaid Diagram components for fast startup
 const SpatialGraphCanvas = lazy(() => import('@/components/SpatialGraphCanvas'));
+const MermaidTopologyDiagram = lazy(() => import('@/components/MermaidTopologyDiagram'));
 
 type ViewTab = 'storage' | 'presets' | 'spatial' | 'virtual' | 'sql' | 'performance';
 type StorageType = 'local' | 'session' | 'cookies';
 
 export default function App() {
   const [activeTab, setActiveTab] = useState<ViewTab>('storage');
+  const [topologyViewMode, setTopologyViewMode] = useState<'3d' | 'mermaid'>('mermaid');
   const [storageType, setStorageType] = useState<StorageType>('local');
   const [currentUrl, setCurrentUrl] = useState<string>('');
   const [currentTitle, setCurrentTitle] = useState<string>('');
@@ -509,7 +511,7 @@ console.log('LocalStorage State:', data);`;
           className={`tab-btn ${activeTab === 'spatial' ? 'active' : ''}`}
           onClick={() => setActiveTab('spatial')}
         >
-          <Box size={13} /> 3D View
+          <Box size={13} /> 3D & Mermaid
         </button>
         <button
           className={`tab-btn ${activeTab === 'virtual' ? 'active' : ''}`}
@@ -1055,24 +1057,63 @@ console.log('LocalStorage State:', data);`;
         </main>
       )}
 
-      {/* Module 3: Lazy-Loaded 3D Spatial Canvas */}
+      {/* Module 3: 3D Spatial Canvas & Mermaid Topology Diagram */}
       {activeTab === 'spatial' && (
-        <main className="content-area" style={{ padding: 8 }}>
-          <div style={{ fontSize: 11, color: '#94a3b8', marginBottom: 6 }}>
-            WebGL 3D Graph Canvas (Drag to rotate, scroll to zoom):
+        <main className="content-area" style={{ padding: 8, gap: 10 }}>
+          {/* Sub-tab view mode selector */}
+          <div style={{ display: 'flex', gap: 6, marginBottom: 4 }}>
+            <button
+              className={`tab-btn ${topologyViewMode === 'mermaid' ? 'active' : ''}`}
+              onClick={() => setTopologyViewMode('mermaid')}
+              style={{ flex: 1, padding: '4px 10px', fontSize: 11, display: 'flex', alignItems: 'center', justifyContent: 'center', gap: 6 }}
+            >
+              <Network size={14} /> ⭐ Mermaid Topology (Star, Hierarchy, Subgraph, Sequence)
+            </button>
+            <button
+              className={`tab-btn ${topologyViewMode === '3d' ? 'active' : ''}`}
+              onClick={() => setTopologyViewMode('3d')}
+              style={{ flex: 1, padding: '4px 10px', fontSize: 11, display: 'flex', alignItems: 'center', justifyContent: 'center', gap: 6 }}
+            >
+              <Box size={14} /> 🌐 3D Spatial WebGL Canvas
+            </button>
           </div>
-          <Suspense
-            fallback={
-              <div className="empty-state">
-                <RefreshCw className="animate-spin" size={24} />
-                <p>Initializing WebGL 3D Canvas...</p>
+
+          {topologyViewMode === 'mermaid' ? (
+            <Suspense
+              fallback={
+                <div className="empty-state">
+                  <RefreshCw className="animate-spin" size={24} />
+                  <p>Loading Mermaid Topology Engine...</p>
+                </div>
+              }
+            >
+              <MermaidTopologyDiagram
+                currentUrl={currentUrl}
+                entries={[
+                  ...items.map((i) => ({ key: i.key, value: i.value, target: (storageType === 'local' ? 'localStorage' : 'sessionStorage') as any })),
+                  ...cookies.map((c) => ({ key: c.name, value: c.value, target: 'cookie' as any })),
+                ]}
+              />
+            </Suspense>
+          ) : (
+            <>
+              <div style={{ fontSize: 11, color: '#94a3b8', marginBottom: 2 }}>
+                WebGL 3D Graph Canvas (Drag to rotate, scroll to zoom, double-click node to explode):
               </div>
-            }
-          >
-            <SpatialGraphCanvas
-              storageEntries={items.map((i) => ({ key: i.key, value: i.value, target: storageType === 'local' ? 'localStorage' : storageType === 'session' ? 'sessionStorage' : 'cookie' }))}
-            />
-          </Suspense>
+              <Suspense
+                fallback={
+                  <div className="empty-state">
+                    <RefreshCw className="animate-spin" size={24} />
+                    <p>Initializing WebGL 3D Canvas...</p>
+                  </div>
+                }
+              >
+                <SpatialGraphCanvas
+                  storageEntries={items.map((i) => ({ key: i.key, value: i.value, target: storageType === 'local' ? 'localStorage' : storageType === 'session' ? 'sessionStorage' : 'cookie' }))}
+                />
+              </Suspense>
+            </>
+          )}
         </main>
       )}
 
