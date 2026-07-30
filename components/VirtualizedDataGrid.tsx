@@ -1,4 +1,4 @@
-import React, { useState, useRef } from 'react';
+import React, { useState, useRef, useEffect } from 'react';
 import { useVirtualizer } from '@tanstack/react-virtual';
 import {
   MoreVertical,
@@ -14,6 +14,8 @@ import {
   Save,
   X,
   Trash2,
+  Activity,
+  Pin,
 } from 'lucide-react';
 
 export interface GridRow {
@@ -30,9 +32,17 @@ export interface VirtualizedDataGridProps {
   rows: GridRow[];
   onUpdateEntry?: (key: string, newValue: string) => Promise<void> | void;
   onDeleteEntry?: (key: string) => Promise<void> | void;
+  observedKeys?: Record<string, boolean>;
+  onToggleObserve?: (key: string) => void;
 }
 
-export default function VirtualizedDataGrid({ rows, onUpdateEntry, onDeleteEntry }: VirtualizedDataGridProps) {
+export default function VirtualizedDataGrid({
+  rows,
+  onUpdateEntry,
+  onDeleteEntry,
+  observedKeys = {},
+  onToggleObserve,
+}: VirtualizedDataGridProps) {
   const parentRef = useRef<HTMLDivElement>(null);
   const [rowFormats, setRowFormats] = useState<Record<number, DisplayFormat>>({});
   const [activeMenuRowId, setActiveMenuRowId] = useState<number | null>(null);
@@ -45,11 +55,48 @@ export default function VirtualizedDataGrid({ rows, onUpdateEntry, onDeleteEntry
   const [editingValue, setEditingValue] = useState<string>('');
   const [isSaving, setIsSaving] = useState<boolean>(false);
 
+  // Value mutation track & pulse glow animation map
+  const previousValuesRef = useRef<Record<string, string>>({});
+  const [glowingKeys, setGlowingKeys] = useState<Record<string, boolean>>({});
+
+  useEffect(() => {
+    const newGlows: Record<string, boolean> = {};
+    let hasChanges = false;
+
+    rows.forEach((r) => {
+      const prev = previousValuesRef.current[r.key];
+      if (prev !== undefined && prev !== r.value) {
+        newGlows[r.key] = true;
+        hasChanges = true;
+      }
+      previousValuesRef.current[r.key] = r.value;
+    });
+
+    if (hasChanges) {
+      setGlowingKeys((prev) => ({ ...prev, ...newGlows }));
+      const timer = setTimeout(() => {
+        setGlowingKeys((prev) => {
+          const updated = { ...prev };
+          Object.keys(newGlows).forEach((k) => delete updated[k]);
+          return updated;
+        });
+      }, 2500);
+      return () => clearTimeout(timer);
+    }
+  }, [rows]);
+
+  // Sort rows so observed fields are pinned at the top
+  const sortedRows = [...rows].sort((a, b) => {
+    const aObs = observedKeys[a.key] ? 1 : 0;
+    const bObs = observedKeys[b.key] ? 1 : 0;
+    return bObs - aObs;
+  });
+
   const rowVirtualizer = useVirtualizer({
-    count: rows.length,
+    count: sortedRows.length,
     getScrollElement: () => parentRef.current,
     estimateSize: (index) => {
-      const id = rows[index]?.id;
+      const id = sortedRows[index]?.id;
       const isExpanded = expandedRowIds[id];
       const isEditing = editingRowId === id;
       if (isEditing) return 160;
@@ -164,12 +211,14 @@ export default function VirtualizedDataGrid({ rows, onUpdateEntry, onDeleteEntry
         }}
       >
         {rowVirtualizer.getVirtualItems().map((virtualRow) => {
-          const row = rows[virtualRow.index];
+          const row = sortedRows[virtualRow.index];
           if (!row) return null;
           const currentFormat = rowFormats[row.id] || 'raw';
           const isMenuOpen = activeMenuRowId === row.id;
           const isExpanded = !!expandedRowIds[row.id];
           const isEditing = editingRowId === row.id;
+          const isObserved = !!observedKeys[row.key];
+          const isGlowing = !!glowingKeys[row.key];
 
           return (
             <div
@@ -188,8 +237,22 @@ export default function VirtualizedDataGrid({ rows, onUpdateEntry, onDeleteEntry
                 fontFamily: 'monospace',
                 fontSize: '11px',
                 color: '#e2e8f0',
-                background: isEditing ? '#0f2744' : isMenuOpen || isExpanded ? '#1e293b' : 'transparent',
-                zIndex: isMenuOpen ? 9999 : 1,
+                background: isGlowing
+                  ? 'rgba(56, 189, 248, 0.25)'
+                  : isEditing
+                  ? '#0f2744'
+                  : isObserved
+                  ? 'rgba(168, 85, 247, 0.12)'
+                  : isMenuOpen || isExpanded
+                  ? '#1e293b'
+                  : 'transparent',
+                boxShadow: isGlowing
+                  ? '0 0 20px rgba(56, 189, 248, 0.9), inset 0 0 10px rgba(16, 185, 129, 0.4)'
+                  : isObserved
+                  ? 'inset 3px 0 0 #a855f7'
+                  : 'none',
+                transition: 'all 0.3s ease-in-out',
+                zIndex: isGlowing ? 100 : isMenuOpen ? 9999 : 1,
               }}
             >
               {/* Row Header Bar */}
@@ -210,13 +273,44 @@ export default function VirtualizedDataGrid({ rows, onUpdateEntry, onDeleteEntry
                 >
                   {isExpanded ? <ChevronDown size={14} /> : <ChevronRight size={14} />}
                 </button>
-                <span style={{ color: '#64748b' }}>#{row.id}</span>
-                <span style={{ color: '#38bdf8', fontWeight: 600, overflow: 'hidden', textOverflow: 'ellipsis' }}>
-                  {row.key}
-                </span>
-                <span style={{ whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis', paddingRight: 8 }}>
+
+                <div style={{ display: 'flex', alignItems: 'center', gap: 4 }}>
+                  <span style={{ color: '#64748b' }}>#{row.id}</span>
+                  {isObserved && (
+                    <span title="Feld wird aktiv beobachtet (Observed)" style={{ color: '#a855f7', display: 'flex', alignItems: 'center' }}>
+                      <Activity size={12} className="pulse-glow" />
+                    </span>
+                  )}
+                </div>
+
+                <div style={{ display: 'flex', alignItems: 'center', gap: 6, overflow: 'hidden' }}>
+                  <span style={{ color: isObserved ? '#a855f7' : '#38bdf8', fontWeight: 600, overflow: 'hidden', textOverflow: 'ellipsis' }}>
+                    {row.key}
+                  </span>
+                  {isObserved && (
+                    <span style={{ fontSize: 9, background: '#a855f7', color: '#ffffff', padding: '1px 4px', borderRadius: 3, fontWeight: 700 }}>
+                      OBSERVED
+                    </span>
+                  )}
+                </div>
+
+                {/* Value display with Double-Click to Edit */}
+                <span
+                  onDoubleClick={() => startEditing(row)}
+                  title="💡 Doppelklick zum Bearbeiten des Werts"
+                  style={{
+                    whiteSpace: 'nowrap',
+                    overflow: 'hidden',
+                    textOverflow: 'ellipsis',
+                    paddingRight: 8,
+                    cursor: 'pointer',
+                    color: isGlowing ? '#38bdf8' : 'inherit',
+                    fontWeight: isGlowing ? 700 : 'normal',
+                  }}
+                >
                   {renderFormattedValue(row, currentFormat)}
                 </span>
+
                 <span style={{ color: '#10b981', textAlign: 'right' }}>{row.sizeBytes} B</span>
 
                 {/* 3-Dots Context Menu Trigger Button */}
@@ -225,7 +319,7 @@ export default function VirtualizedDataGrid({ rows, onUpdateEntry, onDeleteEntry
                     className="action-btn"
                     title="Value Display & Formatting Options"
                     onClick={() => toggleMenu(row.id)}
-                    style={{ padding: 4, color: isMenuOpen ? '#38bdf8' : '#94a3b8' }}
+                    style={{ padding: 4, color: isMenuOpen ? '#38bdf8' : isObserved ? '#a855f7' : '#94a3b8' }}
                   >
                     <MoreVertical size={14} />
                   </button>
@@ -243,7 +337,7 @@ export default function VirtualizedDataGrid({ rows, onUpdateEntry, onDeleteEntry
                         borderRadius: 6,
                         boxShadow: '0 10px 30px rgba(0, 0, 0, 0.9)',
                         padding: 4,
-                        minWidth: 180,
+                        minWidth: 190,
                         display: 'flex',
                         flexDirection: 'column',
                         gap: 2,
@@ -254,8 +348,20 @@ export default function VirtualizedDataGrid({ rows, onUpdateEntry, onDeleteEntry
                         style={{ fontSize: 11, padding: '6px 10px', justifyContent: 'flex-start', gap: 6, color: '#38bdf8' }}
                         onClick={() => startEditing(row)}
                       >
-                        <Edit3 size={12} /> Live Edit Value
+                        <Edit3 size={12} /> Live Edit Value (Doppelklick)
                       </button>
+                      {onToggleObserve && (
+                        <button
+                          className="tab-btn"
+                          style={{ fontSize: 11, padding: '6px 10px', justifyContent: 'flex-start', gap: 6, color: isObserved ? '#f43f5e' : '#a855f7' }}
+                          onClick={() => {
+                            onToggleObserve(row.key);
+                            setActiveMenuRowId(null);
+                          }}
+                        >
+                          <Activity size={12} /> {isObserved ? 'Unobserve Field' : '👁️ Observe / Watch Field'}
+                        </button>
+                      )}
                       <div style={{ height: 1, background: '#334155', margin: '2px 0' }} />
                       <button
                         className="tab-btn"
@@ -361,7 +467,7 @@ export default function VirtualizedDataGrid({ rows, onUpdateEntry, onDeleteEntry
                   </div>
                 </div>
               ) : isExpanded ? (
-                /* Expandable Multi-Line Detail Drawer with Copy Button */
+                /* Expandable Multi-Line Detail Drawer with Copy & Observe Buttons */
                 <div
                   style={{
                     padding: '8px 12px 12px 42px',
@@ -380,13 +486,23 @@ export default function VirtualizedDataGrid({ rows, onUpdateEntry, onDeleteEntry
                   <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
                     <span style={{ fontSize: 11, color: '#cbd5e1', fontWeight: 600 }}>Un-truncated Payload Value:</span>
                     <div style={{ display: 'flex', gap: 6 }}>
+                      {onToggleObserve && (
+                        <button
+                          className="action-btn"
+                          title="Feld beobachten"
+                          onClick={() => onToggleObserve(row.key)}
+                          style={{ color: isObserved ? '#f43f5e' : '#a855f7', padding: '2px 6px', fontSize: 10, background: '#030712', borderRadius: 4, border: '1px solid #1e293b', display: 'flex', alignItems: 'center', gap: 4 }}
+                        >
+                          <Activity size={11} /> {isObserved ? 'Unobserve' : 'Observe'}
+                        </button>
+                      )}
                       <button
                         className="action-btn"
                         title="Edit value"
                         onClick={() => startEditing(row)}
                         style={{ color: '#38bdf8', padding: '2px 6px', fontSize: 10, background: '#030712', borderRadius: 4, border: '1px solid #1e293b', display: 'flex', alignItems: 'center', gap: 4 }}
                       >
-                        <Edit3 size={11} /> Edit
+                        <Edit3 size={11} /> Edit (Doppelklick)
                       </button>
                       <button
                         className="action-btn"
@@ -399,6 +515,8 @@ export default function VirtualizedDataGrid({ rows, onUpdateEntry, onDeleteEntry
                     </div>
                   </div>
                   <pre
+                    onDoubleClick={() => startEditing(row)}
+                    title="💡 Doppelklick zum Bearbeiten des Werts"
                     style={{
                       fontFamily: 'monospace',
                       fontSize: 11,
@@ -411,6 +529,7 @@ export default function VirtualizedDataGrid({ rows, onUpdateEntry, onDeleteEntry
                       wordBreak: 'break-all',
                       maxHeight: '200px',
                       overflowY: 'auto',
+                      cursor: 'pointer',
                     }}
                   >
                     {renderFormattedValue(row, currentFormat)}

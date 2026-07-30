@@ -251,6 +251,27 @@ export default function App() {
     await fetchStorageData();
   };
 
+  const [observedKeys, setObservedKeys] = useState<Record<string, boolean>>({});
+
+  const handleToggleObserve = (key: string) => {
+    setObservedKeys((prev) => ({
+      ...prev,
+      [key]: !prev[key],
+    }));
+  };
+
+  // High-Frequency Observer Polling (1000ms) to detect live page mutations
+  useEffect(() => {
+    const hasObserved = Object.values(observedKeys).some(Boolean);
+    if (!hasObserved) return;
+
+    const interval = setInterval(() => {
+      fetchStorageData();
+    }, 1000);
+
+    return () => clearInterval(interval);
+  }, [observedKeys, storageType]);
+
   useEffect(() => {
     fetchStorageData();
   }, [storageType]);
@@ -645,6 +666,8 @@ console.log('LocalStorage State:', data);`;
             rows={gridRows}
             onUpdateEntry={handleUpdateStorageEntry}
             onDeleteEntry={handleDeleteStorageEntry}
+            observedKeys={observedKeys}
+            onToggleObserve={handleToggleObserve}
           />
         </main>
       )}
