@@ -432,7 +432,7 @@ export default function MermaidTopologyDiagram({ entries, currentUrl = 'https://
                 (Keine Einträge für {engName.toUpperCase()} vorhanden)
               </div>
             ) : (
-              <div style={{ display: 'flex', flexDirection: 'column', gap: 12, width: '100%' }}>
+              <div style={{ display: 'flex', flexDirection: 'column', gap: 12, width: '100%', maxHeight: 420, overflowY: 'auto', paddingRight: 4 }}>
                 {activeItems.map((item, idx) => {
                   const formattedVal = formatValuePayload(item.value);
                   const byteSize = new Blob([item.key + item.value]).size;
@@ -454,6 +454,7 @@ export default function MermaidTopologyDiagram({ entries, currentUrl = 'https://
                         flexDirection: 'column',
                         gap: 8,
                         boxShadow: '0 4px 12px rgba(0,0,0,0.3)',
+                        boxSizing: 'border-box',
                       }}
                       title="Doppelklick: Sub-Diagramm für diesen Key öffnen"
                     >
@@ -472,12 +473,16 @@ export default function MermaidTopologyDiagram({ entries, currentUrl = 'https://
                           background: '#030712',
                           border: '1px solid #1e293b',
                           borderRadius: 6,
-                          padding: 10,
-                          fontSize: 10,
+                          padding: '8px 12px',
+                          fontSize: 11,
+                          lineHeight: '1.5',
                           color: '#e2e8f0',
                           whiteSpace: 'pre-wrap',
                           wordBreak: 'break-all',
-                          fontFamily: 'monospace',
+                          fontFamily: 'Consolas, Monaco, "Andale Mono", monospace',
+                          boxSizing: 'border-box',
+                          maxHeight: 180,
+                          overflowY: 'auto',
                         }}
                       >
                         {formattedVal}
