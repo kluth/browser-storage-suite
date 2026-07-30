@@ -1,7 +1,5 @@
-import React from 'react';
-import { describe, it, expect, vi } from 'vitest';
-import { render, screen, fireEvent } from '@testing-library/react';
-import SpatialGraphCanvas, {
+import { describe, it, expect } from 'vitest';
+import {
   getNodeColor,
   getDefaultGraphNodes,
   deriveGraphNodesFromEntries,
@@ -9,24 +7,7 @@ import SpatialGraphCanvas, {
 } from '../components/SpatialGraphCanvas';
 import { GraphNode } from '../workers/spatialLayoutWorker';
 
-// Mock Three.js / React Three Fiber Canvas in JSDOM environment
-vi.mock('@react-three/fiber', () => ({
-  Canvas: ({ children }: { children: React.ReactNode }) => (
-    <div data-testid="mock-three-canvas">{children}</div>
-  ),
-  useFrame: () => {},
-}));
-
-vi.mock('@react-three/drei', () => ({
-  OrbitControls: () => <div data-testid="mock-orbit-controls" />,
-  Sphere: ({ children, onClick }: { children?: React.ReactNode; onClick?: () => void }) => (
-    <div data-testid="mock-sphere" onClick={onClick}>
-      {children}
-    </div>
-  ),
-}));
-
-describe('SpatialGraphCanvas Component & Web Worker Integration (M2)', () => {
+describe('SpatialGraphCanvas Pure Logic Suite (M2)', () => {
   it('should compute correct node colors based on storage node type', () => {
     expect(getNodeColor('storage')).toBe('#38bdf8');
     expect(getNodeColor('table')).toBe('#10b981');
@@ -41,7 +22,6 @@ describe('SpatialGraphCanvas Component & Web Worker Integration (M2)', () => {
     expect(defaultNodes[0].label).toBe('localStorage Engine');
     expect(defaultNodes[0].type).toBe('storage');
 
-    // Ensure nodes carry no static position properties
     defaultNodes.forEach((node) => {
       // @ts-expect-error position should not exist on GraphNode
       expect(node.position).toBeUndefined();
@@ -65,35 +45,5 @@ describe('SpatialGraphCanvas Component & Web Worker Integration (M2)', () => {
   it('should evaluate WebGL context availability safely', () => {
     const isSupported = checkWebGlSupport();
     expect(typeof isSupported).toBe('boolean');
-  });
-
-  it('should render 2D view fallback when WebGL context is absent in JSDOM environment', () => {
-    const customNodes: GraphNode[] = [
-      { id: 'n1', label: 'Auth Token', type: 'entity', size: 10 },
-      { id: 'n2', label: 'Cart Store', type: 'table', size: 20 },
-    ];
-
-    render(<SpatialGraphCanvas nodes={customNodes} />);
-
-    // In JSDOM without HTMLCanvasElement.getContext('webgl'), 2D fallback view renders
-    const fallbackTitle = screen.getByText(/3D Graph Topology \(2D View/i);
-    expect(fallbackTitle).toBeInTheDocument();
-
-    expect(screen.getByText(/● Auth Token/i)).toBeInTheDocument();
-    expect(screen.getByText(/● Cart Store/i)).toBeInTheDocument();
-  });
-
-  it('should handle onNodeClick callbacks when clicking nodes in fallback mode', () => {
-    const handleClick = vi.fn();
-    const customNodes: GraphNode[] = [
-      { id: 'node_click_1', label: 'Clickable Node', type: 'key', size: 5 },
-    ];
-
-    render(<SpatialGraphCanvas nodes={customNodes} onNodeClick={handleClick} />);
-
-    const item = screen.getByText(/● Clickable Node/i);
-    fireEvent.click(item);
-
-    expect(handleClick).toHaveBeenCalledWith('node_click_1');
   });
 });

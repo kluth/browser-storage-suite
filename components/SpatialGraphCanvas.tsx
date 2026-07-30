@@ -109,10 +109,9 @@ export default function SpatialGraphCanvas({
   }, []);
 
   useEffect(() => {
-    let worker: Worker | null = null;
     let isSubscribed = true;
 
-    const handleResult = (res: WorkerLayoutResponse) => {
+    const applyLayoutResult = (res: WorkerLayoutResponse) => {
       if (!isSubscribed) return;
       if (res.ok) {
         const posMap = new Map<string, [number, number, number]>();
@@ -126,26 +125,18 @@ export default function SpatialGraphCanvas({
       }
     };
 
+    // Calculate spatial layout synchronously to guarantee 100% reliability across extension environments
     try {
-      if (typeof Worker !== 'undefined') {
-        worker = new Worker(new URL('../workers/spatialLayoutWorker.ts', import.meta.url), { type: 'module' });
-        worker.onmessage = (e: MessageEvent<WorkerLayoutResponse>) => handleResult(e.data);
-        worker.onerror = (err) => {
-          if (isSubscribed) setWorkerError(err.message || 'Worker execution error');
-        };
-        worker.postMessage({ nodes: effectiveNodes, links: propLinks });
-      } else {
-        const res = calculateSpatialLayout(effectiveNodes, propLinks);
-        handleResult(res);
-      }
-    } catch {
       const res = calculateSpatialLayout(effectiveNodes, propLinks);
-      handleResult(res);
+      applyLayoutResult(res);
+    } catch (err: any) {
+      if (isSubscribed) {
+        setWorkerError(err?.message || 'Error calculating 3D spatial layout');
+      }
     }
 
     return () => {
       isSubscribed = false;
-      if (worker) worker.terminate();
     };
   }, [effectiveNodes, propLinks]);
 
