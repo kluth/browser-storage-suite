@@ -10,6 +10,26 @@ export interface StorageEntryItem {
   target: StorageTarget;
 }
 
+export function formatValuePayload(val: string): string {
+  if (!val) return '(empty)';
+  try {
+    const parsed = JSON.parse(val);
+    if (typeof parsed === 'object' && parsed !== null) {
+      return JSON.stringify(parsed, null, 2);
+    }
+  } catch {}
+
+  if (val.includes('=') && (val.includes('&') || val.includes(';'))) {
+    return val
+      .split(/[&;]/)
+      .map((s) => s.trim())
+      .filter(Boolean)
+      .join('\n');
+  }
+
+  return val;
+}
+
 export interface MermaidTopologyDiagramProps {
   entries: StorageEntryItem[];
   currentUrl?: string;
@@ -467,73 +487,112 @@ export default function MermaidTopologyDiagram({ entries, currentUrl = 'https://
     if (layoutType === 'subgraph_cluster') {
       return (
         <div style={{ width: '100%', display: 'flex', flexDirection: 'column', gap: 10 }}>
-          <div style={{ fontSize: 11, color: '#94a3b8', marginBottom: 2 }}>
-            📦 Storage Cluster Übersicht (Doppelklick auf Engine-Header für Sub-Diagramm):
+          <div style={{ fontSize: 11, color: '#94a3b8', display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
+            <span>📦 Storage Cluster Vollansicht — Alle Daten & JSON/YAML Formatierungen sofort expandiert:</span>
+            <span style={{ fontSize: 10, color: '#38bdf8', fontWeight: 600 }}>💡 Doppelklick auf Header/Card für Fokus-Ansicht</span>
           </div>
 
-          <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 10, maxHeight: 390, overflowY: 'auto' }}>
+          <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 12, maxHeight: 420, overflowY: 'auto', paddingRight: 4 }}>
             {engines.map((eng) => {
               const matched = entries.filter((e) => e.target.toLowerCase().includes(eng.name.toLowerCase()));
 
               return (
                 <div
                   key={eng.name}
+                  onDoubleClick={(e) => {
+                    e.stopPropagation();
+                    setFocusedPath([eng.name]);
+                  }}
                   style={{
                     background: '#090d16',
-                    border: `1px solid ${eng.color}`,
+                    border: `1.5px solid ${eng.color}`,
                     borderRadius: 8,
                     overflow: 'hidden',
                     display: 'flex',
                     flexDirection: 'column',
+                    cursor: 'pointer',
+                    boxShadow: '0 4px 12px rgba(0,0,0,0.3)',
                   }}
+                  title="Doppelklick: Dieses Cluster in Vollbild Sub-Diagramm öffnen"
                 >
                   <div
-                    onDoubleClick={() => setFocusedPath([eng.name])}
                     style={{
                       background: '#1e293b',
-                      padding: '8px 10px',
+                      padding: '8px 12px',
                       display: 'flex',
                       alignItems: 'center',
                       justifyContent: 'space-between',
-                      cursor: 'pointer',
                       userSelect: 'none',
+                      borderBottom: `1px solid ${eng.color}44`,
                     }}
-                    title="Doppelklick: Sub-Diagramm für diese Engine öffnen!"
                   >
                     <span style={{ fontSize: 11, fontWeight: 700, color: eng.color }}>
-                      {eng.icon} {eng.name.toUpperCase()} ({matched.length})
+                      {eng.icon} {eng.name.toUpperCase()} ({matched.length} Einträge)
                     </span>
-                    <span style={{ fontSize: 9, color: '#38bdf8', fontWeight: 600 }}>🔍 Doppelklick für Sub-Diagramm</span>
+                    <span style={{ fontSize: 9, color: '#38bdf8', fontWeight: 600 }}>🔍 Doppelklick für Zoom</span>
                   </div>
 
-                  <div style={{ padding: 8, display: 'flex', flexDirection: 'column', gap: 4, maxHeight: 180, overflowY: 'auto' }}>
+                  <div style={{ padding: 10, display: 'flex', flexDirection: 'column', gap: 8, maxHeight: 260, overflowY: 'auto' }}>
                     {matched.length === 0 ? (
-                      <div style={{ fontSize: 10, color: '#64748b', fontStyle: 'italic', padding: 4 }}>
-                        (Keine Einträge)
+                      <div style={{ fontSize: 10, color: '#64748b', fontStyle: 'italic', padding: 8 }}>
+                        (Keine Einträge in diesem Storage Cluster)
                       </div>
                     ) : (
-                      matched.map((item, idx) => (
-                        <div
-                          key={idx}
-                          onDoubleClick={() => setFocusedPath([eng.name, item.key])}
-                          style={{
-                            background: '#030712',
-                            border: '1px solid #1e293b',
-                            borderRadius: 4,
-                            padding: '4px 8px',
-                            fontSize: 10,
-                            fontFamily: 'monospace',
-                            display: 'flex',
-                            justifyContent: 'space-between',
-                            alignItems: 'center',
-                            cursor: 'pointer',
-                          }}
-                          title="Doppelklick für Key Sub-Diagramm"
-                        >
-                          <span style={{ color: eng.color, fontWeight: 600 }}>🔑 {item.key.slice(0, 16)}</span>
-                          <span style={{ color: '#94a3b8', fontSize: 9 }}>{item.value.slice(0, 12)}...</span>
-                        </div>
-                      ))
+                      matched.map((item, idx) => {
+                        const formattedVal = formatValuePayload(item.value);
+                        const byteSize = new Blob([item.key + item.value]).size;
+
+                        return (
+                          <div
+                            key={idx}
+                            onDoubleClick={(e) => {
+                              e.stopPropagation();
+                              setFocusedPath([eng.name, item.key]);
+                            }}
+                            style={{
+                              background: '#030712',
+                              border: '1px solid #1e293b',
+                              borderRadius: 6,
+                              padding: '8px 10px',
+                              fontSize: 10,
+                              fontFamily: 'monospace',
+                              display: 'flex',
+                              flexDirection: 'column',
+                              gap: 4,
+                              cursor: 'pointer',
+                              transition: 'border-color 0.2s',
+                            }}
+                            title="Doppelklick: Key Details im Sub-Diagramm öffnen"
+                          >
+                            <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
+                              <span style={{ color: eng.color, fontWeight: 700, fontSize: 11 }}>
+                                🔑 {item.key}
+                              </span>
+                              <span style={{ color: '#a855f7', fontSize: 9, background: '#a855f71a', padding: '1px 6px', borderRadius: 4 }}>
+                                {byteSize} B
+                              </span>
+                            </div>
+
+                            <pre
+                              style={{
+                                margin: 0,
+                                background: '#090d16',
+                                border: '1px solid #1e293b',
+                                borderRadius: 4,
+                                padding: 6,
+                                fontSize: 9,
+                                color: '#cbd5e1',
+                                whiteSpace: 'pre-wrap',
+                                wordBreak: 'break-all',
+                                maxHeight: 90,
+                                overflowY: 'auto',
+                              }}
+                            >
+                              {formattedVal}
+                            </pre>
+                          </div>
+                        );
+                      })
                     )}
                   </div>
                 </div>
