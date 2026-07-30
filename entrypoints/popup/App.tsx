@@ -996,7 +996,7 @@ console.log('LocalStorage State:', data);`;
                           title="💡 Doppelklick zum Bearbeiten des Werts"
                           style={{ cursor: 'pointer' }}
                         >
-                          <HighlightedCodeSpan text={item.value} />
+                          <HighlightedCodeSpan text={item.value} showLineNumbers={true} />
                         </div>
                       )}
 

@@ -30,50 +30,45 @@ export function formatValuePayload(val: string): string {
   return val;
 }
 
-export function HighlightedCodeSpan({ text }: { text: string }) {
-  if (!text) return <span style={{ color: '#64748b', fontStyle: 'italic' }}>(empty)</span>;
+function SingleLineSyntaxHighlight({ text }: { text: string }) {
+  if (!text) return null;
 
-  // 1. JSON Parsing & Syntax Highlighting
-  try {
-    const parsed = JSON.parse(text);
-    if (typeof parsed === 'object' && parsed !== null) {
-      const jsonStr = JSON.stringify(parsed, null, 2);
-      const tokens = jsonStr.split(/("(\\u[a-zA-Z0-9]{4}|\\[^u]|[^\\"])*"(\s*:)?|\b(true|false|null)\b|-?\d+(?:\.\d*)?(?:[eE][+\-]?\d+)?)/g);
-
-      return (
-        <span>
-          {tokens.map((token, idx) => {
-            if (!token) return null;
-            if (/^"/.test(token)) {
-              if (/:$/.test(token)) {
-                const keyName = token.slice(0, -1);
-                return (
-                  <span key={idx}>
-                    <span style={{ color: '#38bdf8', fontWeight: 600 }}>{keyName}</span>
-                    <span style={{ color: '#94a3b8' }}>:</span>
-                  </span>
-                );
-              }
-              return <span key={idx} style={{ color: '#4ade80' }}>{token}</span>;
+  // 1. JSON token matching
+  if (/^"/.test(text.trim()) || text.includes(':')) {
+    const tokens = text.split(/("(\\u[a-zA-Z0-9]{4}|\\[^u]|[^\\"])*"(\s*:)?|\b(true|false|null)\b|-?\d+(?:\.\d*)?(?:[eE][+\-]?\d+)?)/g);
+    return (
+      <span>
+        {tokens.map((token, idx) => {
+          if (!token) return null;
+          if (/^"/.test(token)) {
+            if (/:$/.test(token)) {
+              const keyName = token.slice(0, -1);
+              return (
+                <span key={idx}>
+                  <span style={{ color: '#38bdf8', fontWeight: 600 }}>{keyName}</span>
+                  <span style={{ color: '#94a3b8' }}>:</span>
+                </span>
+              );
             }
-            if (/true|false/.test(token)) {
-              return <span key={idx} style={{ color: '#f43f5e', fontWeight: 700 }}>{token}</span>;
-            }
-            if (/null/.test(token)) {
-              return <span key={idx} style={{ color: '#94a3b8', fontStyle: 'italic' }}>{token}</span>;
-            }
-            if (!isNaN(Number(token))) {
-              return <span key={idx} style={{ color: '#fb923c', fontWeight: 600 }}>{token}</span>;
-            }
-            return <span key={idx} style={{ color: '#cbd5e1' }}>{token}</span>;
-          })}
-        </span>
-      );
-    }
-  } catch {}
+            return <span key={idx} style={{ color: '#4ade80' }}>{token}</span>;
+          }
+          if (/true|false/.test(token)) {
+            return <span key={idx} style={{ color: '#f43f5e', fontWeight: 700 }}>{token}</span>;
+          }
+          if (/null/.test(token)) {
+            return <span key={idx} style={{ color: '#94a3b8', fontStyle: 'italic' }}>{token}</span>;
+          }
+          if (!isNaN(Number(token)) && token.trim() !== '') {
+            return <span key={idx} style={{ color: '#fb923c', fontWeight: 600 }}>{token}</span>;
+          }
+          return <span key={idx} style={{ color: '#cbd5e1' }}>{token}</span>;
+        })}
+      </span>
+    );
+  }
 
   // 2. SQL Query Highlighting
-  if (/^\s*(SELECT|INSERT|UPDATE|DELETE|CREATE|DROP|ALTER|WITH)\b/i.test(text)) {
+  if (/\b(SELECT|INSERT|UPDATE|DELETE|CREATE|DROP|ALTER|WITH|FROM|WHERE)\b/i.test(text)) {
     const sqlTokens = text.split(/(\b(?:SELECT|FROM|WHERE|AND|OR|INSERT|INTO|VALUES|UPDATE|SET|DELETE|JOIN|LEFT|RIGHT|INNER|OUTER|ON|GROUP|BY|ORDER|LIMIT|CREATE|TABLE|PRIMARY|KEY|DEFAULT|NULL|NOT|IN)\b|'[^']*'|-?\d+)/gi);
 
     return (
@@ -86,7 +81,7 @@ export function HighlightedCodeSpan({ text }: { text: string }) {
           if (/^'[^']*'$/.test(token)) {
             return <span key={idx} style={{ color: '#4ade80' }}>{token}</span>;
           }
-          if (!isNaN(Number(token))) {
+          if (!isNaN(Number(token)) && token.trim() !== '') {
             return <span key={idx} style={{ color: '#fb923c', fontWeight: 600 }}>{token}</span>;
           }
           return <span key={idx} style={{ color: '#e2e8f0' }}>{token}</span>;
@@ -95,51 +90,89 @@ export function HighlightedCodeSpan({ text }: { text: string }) {
     );
   }
 
-  // 3. Key-Value Query String / Cookie Highlighting
-  if (text.includes('=') && (text.includes('&') || text.includes(';'))) {
-    const parts = text.split(/([&;])/);
+  // 3. Key-Value Pair
+  const eqIdx = text.indexOf('=');
+  if (eqIdx !== -1 && !text.includes('{') && !text.includes('<')) {
+    const k = text.slice(0, eqIdx).trim();
+    const v = text.slice(eqIdx + 1).trim();
     return (
       <span>
-        {parts.map((part, idx) => {
-          if (part === '&' || part === ';') {
-            return <span key={idx} style={{ color: '#64748b', fontWeight: 700 }}>{part} </span>;
-          }
-          const eqIdx = part.indexOf('=');
-          if (eqIdx !== -1) {
-            const k = part.slice(0, eqIdx).trim();
-            const v = part.slice(eqIdx + 1).trim();
-            return (
-              <span key={idx}>
-                <span style={{ color: '#38bdf8', fontWeight: 600 }}>{k}</span>
-                <span style={{ color: '#64748b' }}>=</span>
-                <span style={{ color: '#4ade80' }}>{v}</span>
-              </span>
-            );
-          }
-          return <span key={idx} style={{ color: '#cbd5e1' }}>{part}</span>;
-        })}
+        <span style={{ color: '#38bdf8', fontWeight: 600 }}>{k}</span>
+        <span style={{ color: '#64748b' }}>=</span>
+        <span style={{ color: '#4ade80' }}>{v}</span>
       </span>
     );
   }
 
   // 4. URL Highlighting
-  if (/^https?:\/\//i.test(text)) {
+  if (/^https?:\/\//i.test(text.trim())) {
     return <span style={{ color: '#38bdf8', textDecoration: 'underline' }}>{text}</span>;
   }
 
-  // 5. Primitive Booleans / Numbers
-  if (text === 'true' || text === 'false') {
+  // 5. Primitives
+  const trimmed = text.trim();
+  if (trimmed === 'true' || trimmed === 'false') {
     return <span style={{ color: '#f43f5e', fontWeight: 700 }}>{text}</span>;
   }
-  if (text === 'null' || text === 'undefined') {
+  if (trimmed === 'null' || trimmed === 'undefined') {
     return <span style={{ color: '#94a3b8', fontStyle: 'italic' }}>{text}</span>;
   }
-  if (!isNaN(Number(text))) {
+  if (!isNaN(Number(trimmed)) && trimmed !== '') {
     return <span style={{ color: '#fb923c', fontWeight: 600 }}>{text}</span>;
   }
 
-  // Fallback string
   return <span style={{ color: '#e2e8f0' }}>{text}</span>;
+}
+
+export function HighlightedCodeSpan({ text, showLineNumbers = false }: { text: string; showLineNumbers?: boolean }) {
+  if (!text) return <span style={{ color: '#64748b', fontStyle: 'italic' }}>(empty)</span>;
+
+  let formatted = text;
+  try {
+    const parsed = JSON.parse(text);
+    if (typeof parsed === 'object' && parsed !== null) {
+      formatted = JSON.stringify(parsed, null, 2);
+    }
+  } catch {}
+
+  if (text.includes('=') && (text.includes('&') || text.includes(';'))) {
+    formatted = text.split(/[&;]/).map((s) => s.trim()).filter(Boolean).join('\n');
+  }
+
+  const lines = formatted.split('\n');
+
+  if (showLineNumbers && lines.length > 1) {
+    return (
+      <div style={{ display: 'flex', flexDirection: 'column', width: '100%', fontFamily: 'Consolas, Monaco, "Andale Mono", monospace' }}>
+        {lines.map((line, lineIdx) => (
+          <div key={lineIdx} style={{ display: 'flex', alignItems: 'flex-start', lineHeight: 1.45 }}>
+            <span
+              style={{
+                width: 26,
+                minWidth: 26,
+                textAlign: 'right',
+                paddingRight: 8,
+                marginRight: 8,
+                borderRight: '1px solid #1e293b',
+                color: '#475569',
+                fontSize: 9,
+                userSelect: 'none',
+                flexShrink: 0,
+                lineHeight: 1.45,
+              }}
+            >
+              {lineIdx + 1}
+            </span>
+            <span style={{ flex: 1, whiteSpace: 'pre-wrap', wordBreak: 'break-all' }}>
+              <SingleLineSyntaxHighlight text={line} />
+            </span>
+          </div>
+        ))}
+      </div>
+    );
+  }
+
+  return <SingleLineSyntaxHighlight text={formatted} />;
 }
 
 export interface MermaidTopologyDiagramProps {
@@ -474,7 +507,7 @@ export default function MermaidTopologyDiagram({ entries, currentUrl = 'https://
               <div style={{ color: '#38bdf8', fontWeight: 700, fontSize: 10, marginBottom: 4, display: 'flex', alignItems: 'center', gap: 4 }}>
                 📄 Formatted Value Code Payload:
               </div>
-              <HighlightedCodeSpan text={valStr} />
+              <HighlightedCodeSpan text={valStr} showLineNumbers={true} />
             </div>
           </foreignObject>
         </svg>
