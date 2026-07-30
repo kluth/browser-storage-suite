@@ -1,0 +1,17 @@
+{
+  "$schema": "./node_modules/@stryker-mutator/core/schema/stryker-schema.json",
+  "testRunner": "vitest",
+  "reporters": ["html", "clear-text", "progress"],
+  "mutate": [
+    "src/domain/**/*.ts",
+    "src/application/**/*.ts",
+    "utils/**/*.ts",
+    "!utils/browserApi.ts"
+  ],
+  "concurrency": 2,
+  "thresholds": {
+    "high": 80,
+    "low": 60,
+    "break": 50
+  }
+}
