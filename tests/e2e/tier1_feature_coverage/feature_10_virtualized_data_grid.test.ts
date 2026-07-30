@@ -12,7 +12,7 @@ function renderFormattedValueHelper(value: string, format: 'raw' | 'pretty_json'
       const parsed = JSON.parse(value);
       return JSON.stringify(parsed, null, 2);
     } catch {
-      return `[Invalid JSON] ${value}`;
+      return value;
     }
   }
 
@@ -56,11 +56,11 @@ describe('Feature 10: Virtualized Data Grid', () => {
     expect(prettyVal).toContain('"admin": true');
   });
 
-  it('10.4 should return [Invalid JSON] prefix when pretty formatting invalid JSON string', () => {
-    const invalidJson = '{ bad_syntax: true }';
-    const result = renderFormattedValueHelper(invalidJson, 'pretty_json');
+  it('10.4 should return plain string when pretty formatting non-JSON string', () => {
+    const invalidJson = 'compact';
+    const prettyVal = renderFormattedValueHelper(invalidJson, 'pretty_json');
 
-    expect(result).toBe('[Invalid JSON] { bad_syntax: true }');
+    expect(prettyVal).toBe('compact');
   });
 
   it('10.5 should format epoch timestamp numbers into localized date strings', () => {

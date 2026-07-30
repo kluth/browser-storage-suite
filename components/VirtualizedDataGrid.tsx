@@ -74,7 +74,7 @@ export default function VirtualizedDataGrid({ rows }: VirtualizedDataGridProps) 
         const parsed = JSON.parse(row.value);
         return <span style={{ color: '#a855f7', fontFamily: 'monospace' }}>{JSON.stringify(parsed, null, 2)}</span>;
       } catch {
-        return <span style={{ color: '#f43f5e' }}>[Invalid JSON] {row.value}</span>;
+        return <span style={{ color: '#94a3b8' }}>{row.value}</span>;
       }
     }
 
