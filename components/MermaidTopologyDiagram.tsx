@@ -29,6 +29,13 @@ export function generateMermaidCode(
 
   const cleanDomain = sanitize(domainName.replace(/^https?:\/\//, '')) || 'Active Page';
 
+  // Filter entries based on focused path if drilled down
+  let activeEntries = entries;
+  if (focusedPath.length >= 1) {
+    const targetEng = focusedPath[0];
+    activeEntries = entries.filter((e) => e.target.toLowerCase().includes(targetEng.toLowerCase()));
+  }
+
   // 1. Level 2 Drilldown: Focused Key Sub-Diagram (Key -> Value, Type, Size, Provenance)
   if (focusedPath.length === 2) {
     const [targetEng, keyName] = focusedPath;
@@ -51,10 +58,35 @@ export function generateMermaidCode(
     return code;
   }
 
-  // 2. Level 1 Drilldown: Focused Engine Sub-Diagram (Engine -> All Child Keys)
+  // 2. Real Dynamic Sequence Flow Generator
+  if (layoutType === 'sequence_flow') {
+    let code = `sequenceDiagram\n`;
+    code += `  autonumber\n`;
+    code += `  actor User as 👤 Developer / User\n`;
+    code += `  participant Page as 🌐 Web App (${cleanDomain})\n`;
+    code += `  participant Storage as 💾 Storage Engine\n`;
+    code += `  participant Suite as 🛠️ Storage Suite Interceptor\n`;
+
+    if (activeEntries.length === 0) {
+      code += `  User->>Page: Page Loaded (Keine Storage Mutation-Einträge)\n`;
+    } else {
+      activeEntries.slice(0, 6).forEach((item, idx) => {
+        const cleanKey = sanitize(item.key);
+        const cleanVal = sanitize(item.value.slice(0, 16));
+        const byteSize = new Blob([item.key + item.value]).size;
+        code += `  User->>Page: Trigger Action #${idx + 1} (${cleanKey})\n`;
+        code += `  Page->>Storage: ${item.target}.setItem("${cleanKey}", "${cleanVal}")\n`;
+        code += `  Storage-->>Suite: Mutation Event Captured (${byteSize} B)\n`;
+        code += `  Suite->>User: Real-time Provenance Attribution & Glow\n`;
+      });
+    }
+    return code;
+  }
+
+  // 3. Level 1 Drilldown: Focused Engine Sub-Diagram
   if (focusedPath.length === 1) {
     const targetEng = focusedPath[0];
-    const engItems = entries.filter((e) => e.target.toLowerCase().includes(targetEng.toLowerCase()));
+    const engItems = activeEntries;
 
     if (layoutType === 'star') {
       let code = `graph LR\n`;
@@ -93,21 +125,9 @@ export function generateMermaidCode(
       code += `  end\n`;
       return code;
     }
-
-    // Sequence for single engine
-    let code = `sequenceDiagram\n`;
-    code += `  autonumber\n`;
-    code += `  actor User as 👤 User\n`;
-    code += `  participant Engine as 📦 ${targetEng}\n`;
-    code += `  participant Suite as 🛠️ Storage Suite\n`;
-    engItems.slice(0, 5).forEach((item) => {
-      code += `  User->>Engine: Mutate Key "${sanitize(item.key)}"\n`;
-      code += `  Engine-->>Suite: Intercept Mutation (${new Blob([item.value]).size} B)\n`;
-    });
-    return code;
   }
 
-  // 3. Level 0: Main Global Diagram
+  // 4. Level 0: Main Global Diagram
   const grouped: Record<string, StorageEntryItem[]> = {
     localStorage: [],
     sessionStorage: [],
@@ -187,20 +207,7 @@ export function generateMermaidCode(
     return code;
   }
 
-  // Sequence Flow
-  let code = `sequenceDiagram\n`;
-  code += `  autonumber\n`;
-  code += `  actor User as 👤 Web User\n`;
-  code += `  participant Page as 🌐 Web App (${cleanDomain})\n`;
-  code += `  participant Suite as 🛠️ Storage Suite\n`;
-  code += `  participant Engine as 💾 Browser Engines\n`;
-
-  code += `  User->>Page: Interacts with UI\n`;
-  code += `  Page->>Engine: setItem() / document.cookie\n`;
-  code += `  Engine-->>Suite: StorageEvent / Mutation Event\n`;
-  code += `  Suite->>User: Real-time Glow & Data Blame Provenance\n`;
-
-  return code;
+  return '';
 }
 
 export default function MermaidTopologyDiagram({ entries, currentUrl = 'https://example.com' }: MermaidTopologyDiagramProps) {
@@ -208,12 +215,6 @@ export default function MermaidTopologyDiagram({ entries, currentUrl = 'https://
   const [showCode, setShowCode] = useState<boolean>(false);
   const [copied, setCopied] = useState<boolean>(false);
   const [focusedPath, setFocusedPath] = useState<string[]>([]);
-  const [expandedClusters, setExpandedClusters] = useState<Record<string, boolean>>({
-    localStorage: true,
-    sessionStorage: true,
-    cookie: true,
-    indexedDB: true,
-  });
 
   const cleanDomain = currentUrl.replace(/^https?:\/\//, '') || 'Active Page';
 
@@ -252,6 +253,13 @@ export default function MermaidTopologyDiagram({ entries, currentUrl = 'https://
     const height = 420;
     const cx = width / 2;
     const cy = height / 2;
+
+    // Filter active items based on focused path
+    let activeItems = entries;
+    if (focusedPath.length >= 1) {
+      const targetEng = focusedPath[0];
+      activeItems = entries.filter((e) => e.target.toLowerCase().includes(targetEng.toLowerCase()));
+    }
 
     // A. LEVEL 2 SUB-MERMAID DIAGRAM (Key Detail Sub-Diagram)
     if (focusedPath.length === 2) {
@@ -304,19 +312,99 @@ export default function MermaidTopologyDiagram({ entries, currentUrl = 'https://
       );
     }
 
-    // B. LEVEL 1 SUB-MERMAID DIAGRAM (Engine Sub-Diagram)
+    // B. REAL DYNAMIC SEQUENCE FLOW SVG VIEW
+    if (layoutType === 'sequence_flow') {
+      const displayItems = activeItems.slice(0, 4);
+
+      if (displayItems.length === 0) {
+        return (
+          <svg width="100%" height={height} viewBox={`0 0 ${width} ${height}`} style={{ background: '#030712', borderRadius: 8, minWidth: '100%', display: 'block' }}>
+            <text x={cx} y={cy} textAnchor="middle" fill="#94a3b8" fontSize="12" fontStyle="italic">
+              ⚠️ Keine aktiven Storage-Einträge für den Sequenzfluss vorhanden.
+            </text>
+          </svg>
+        );
+      }
+
+      const xUser = 60;
+      const xPage = 210;
+      const xStorage = 390;
+      const xSuite = 570;
+
+      return (
+        <svg width="100%" height={height} viewBox={`0 0 ${width} ${height}`} style={{ background: '#030712', borderRadius: 8, minWidth: '100%', display: 'block' }}>
+          {/* Lifelines */}
+          <line x1={xUser} y1="45" x2={xUser} y2="390" stroke="#334155" strokeDasharray="4 4" />
+          <line x1={xPage} y1="45" x2={xPage} y2="390" stroke="#334155" strokeDasharray="4 4" />
+          <line x1={xStorage} y1="45" x2={xStorage} y2="390" stroke="#334155" strokeDasharray="4 4" />
+          <line x1={xSuite} y1="45" x2={xSuite} y2="390" stroke="#334155" strokeDasharray="4 4" />
+
+          {/* Actor Header Boxes */}
+          <rect x={xUser - 45} y="10" width="90" height="28" rx="6" fill="#1e293b" stroke="#38bdf8" />
+          <text x={xUser} y="28" textAnchor="middle" fill="#f8fafc" fontSize="10" fontWeight="bold">👤 Dev / User</text>
+
+          <rect x={xPage - 55} y="10" width="110" height="28" rx="6" fill="#1e293b" stroke="#a855f7" />
+          <text x={xPage} y="28" textAnchor="middle" fill="#f8fafc" fontSize="10" fontWeight="bold">🌐 {cleanDomain.slice(0, 10)}</text>
+
+          <rect x={xStorage - 55} y="10" width="110" height="28" rx="6" fill="#1e293b" stroke="#10b981" />
+          <text x={xStorage} y="28" textAnchor="middle" fill="#f8fafc" fontSize="10" fontWeight="bold">💾 Real Engine</text>
+
+          <rect x={xSuite - 55} y="10" width="110" height="28" rx="6" fill="#1e293b" stroke="#f59e0b" />
+          <text x={xSuite} y="28" textAnchor="middle" fill="#f8fafc" fontSize="10" fontWeight="bold">🛠️ Storage Suite</text>
+
+          {/* Real Dynamic Storage Interception Sequence Rows */}
+          {displayItems.map((item, idx) => {
+            const rowY = idx * 85 + 75;
+            const targetColor = item.target.toLowerCase().includes('local')
+              ? '#38bdf8'
+              : item.target.toLowerCase().includes('cookie')
+              ? '#10b981'
+              : '#a855f7';
+            const byteSize = new Blob([item.key + item.value]).size;
+
+            return (
+              <g key={idx}>
+                {/* Step 1: User -> Page */}
+                <line x1={xUser} y1={rowY} x2={xPage} y2={rowY} stroke="#38bdf8" strokeWidth="1.5" strokeDasharray="3 3" />
+                <polygon points={`${xPage - 6},${rowY - 4} ${xPage},${rowY} ${xPage - 6},${rowY + 4}`} fill="#38bdf8" />
+                <rect x={xUser + 10} y={rowY - 14} width="125" height="16" rx="3" fill="#090d16" stroke="#334155" />
+                <text x={xUser + 15} y={rowY - 2} fill="#38bdf8" fontSize="8" fontWeight="bold">
+                  1. Mutate [{item.key.slice(0, 10)}]
+                </text>
+
+                {/* Step 2: Page -> Storage Engine */}
+                <line x1={xPage} y1={rowY + 18} x2={xStorage} y2={rowY + 18} stroke={targetColor} strokeWidth="1.5" />
+                <polygon points={`${xStorage - 6},${rowY + 14} ${xStorage},${rowY + 18} ${xStorage - 6},${rowY + 22}`} fill={targetColor} />
+                <rect x={xPage + 10} y={rowY + 4} width="155" height="16" rx="3" fill="#090d16" stroke={targetColor} />
+                <text x={xPage + 15} y={rowY + 16} fill={targetColor} fontSize="8" fontFamily="monospace" fontWeight="bold">
+                  2. {item.target}.setItem("{item.key.slice(0, 8)}", "{item.value.slice(0, 6)}")
+                </text>
+
+                {/* Step 3: Storage Engine -> Storage Suite Interceptor */}
+                <line x1={xStorage} y1={rowY + 36} x2={xSuite} y2={rowY + 36} stroke="#f59e0b" strokeWidth="1.5" strokeDasharray="2 2" />
+                <polygon points={`${xSuite - 6},${rowY + 32} ${xSuite},${rowY + 36} ${xSuite - 6},${rowY + 40}`} fill="#f59e0b" />
+                <rect x={xStorage + 10} y={rowY + 22} width="150" height="16" rx="3" fill="#090d16" stroke="#f59e0b" />
+                <text x={xStorage + 15} y={rowY + 34} fill="#f59e0b" fontSize="8" fontWeight="bold">
+                  3. Intercept & Blame ({byteSize} B)
+                </text>
+              </g>
+            );
+          })}
+        </svg>
+      );
+    }
+
+    // C. LEVEL 1 SUB-MERMAID DIAGRAM (Engine Sub-Diagram)
     if (focusedPath.length === 1) {
       const engName = focusedPath[0];
       const eng = engines.find((e) => e.name === engName) || engines[0];
-      const matched = entries.filter((e) => e.target.toLowerCase().includes(engName.toLowerCase()));
 
       if (layoutType === 'star') {
-        const leafAngles = matched.map((_, i) => (i / Math.max(matched.length, 1)) * 2 * Math.PI);
+        const leafAngles = activeItems.map((_, i) => (i / Math.max(activeItems.length, 1)) * 2 * Math.PI);
 
         return (
           <svg width="100%" height={height} viewBox={`0 0 ${width} ${height}`} style={{ background: '#030712', borderRadius: 8, minWidth: '100%', display: 'block' }}>
-            {/* Connecting Star Rays */}
-            {matched.map((item, idx) => {
+            {activeItems.map((item, idx) => {
               const angle = leafAngles[idx];
               const r = 140;
               const lx = cx + Math.cos(angle) * r;
@@ -325,7 +413,7 @@ export default function MermaidTopologyDiagram({ entries, currentUrl = 'https://
               return (
                 <g key={idx}>
                   <line x1={cx} y1={cy} x2={lx} y2={ly} stroke={eng.color} strokeWidth="1.5" strokeDasharray="3 3" opacity="0.8" />
-                  <g transform={`translate(${lx}, ${ly})`} onDoubleClick={() => setFocusedPath([engName, item.key])} style={{ cursor: 'pointer' }} title="Doppelklick für Key-Detail-Diagramm">
+                  <g transform={`translate(${lx}, ${ly})`} onDoubleClick={() => setFocusedPath([engName, item.key])} style={{ cursor: 'pointer' }}>
                     <rect x="-55" y="-14" width="110" height="28" rx="6" fill="#090d16" stroke={eng.color} strokeWidth="1.5" />
                     <text y="-1" textAnchor="middle" fill="#f8fafc" fontSize="10" fontWeight="bold">🔑 {item.key.slice(0, 10)}</text>
                     <text y="9" textAnchor="middle" fill="#94a3b8" fontSize="8">{item.value.slice(0, 10)}</text>
@@ -334,11 +422,10 @@ export default function MermaidTopologyDiagram({ entries, currentUrl = 'https://
               );
             })}
 
-            {/* Central Engine Sub-Root Node */}
             <g transform={`translate(${cx}, ${cy})`}>
               <rect x="-80" y="-24" width="160" height="48" rx="8" fill="#1e293b" stroke={eng.color} strokeWidth="3" />
               <text y="-4" textAnchor="middle" fill="#ffffff" fontSize="12" fontWeight="bold">{eng.icon} {engName.toUpperCase()}</text>
-              <text y="12" textAnchor="middle" fill={eng.color} fontSize="10">{matched.length} Einträge Sub-Diagramm</text>
+              <text y="12" textAnchor="middle" fill={eng.color} fontSize="10">{activeItems.length} Einträge Sub-Diagramm</text>
             </g>
           </svg>
         );
@@ -348,15 +435,13 @@ export default function MermaidTopologyDiagram({ entries, currentUrl = 'https://
         const isTD = layoutType === 'hierarchical_td';
         return (
           <svg width="100%" height={height} viewBox={`0 0 ${width} ${height}`} style={{ background: '#030712', borderRadius: 8, minWidth: '100%', display: 'block' }}>
-            {/* Top/Left Engine Root */}
             <g transform={`translate(${isTD ? cx : 70}, ${isTD ? 45 : cy})`}>
               <rect x="-70" y="-20" width="140" height="40" rx="8" fill="#1e293b" stroke={eng.color} strokeWidth="2" />
               <text y="-2" textAnchor="middle" fill="#ffffff" fontSize="11" fontWeight="bold">{eng.icon} {engName.toUpperCase()}</text>
               <text y="10" textAnchor="middle" fill={eng.color} fontSize="9">Engine Sub-Root</text>
             </g>
 
-            {/* Sub-Children Nodes */}
-            {matched.map((item, idx) => {
+            {activeItems.map((item, idx) => {
               const lx = isTD ? (idx * 140) + 70 : 280;
               const ly = isTD ? 220 : (idx * 65) + 50;
               const startX = isTD ? cx : 140;
@@ -365,7 +450,7 @@ export default function MermaidTopologyDiagram({ entries, currentUrl = 'https://
               return (
                 <g key={idx}>
                   <line x1={startX} y1={startY} x2={lx} y2={ly} stroke={eng.color} strokeWidth="1.5" strokeDasharray="3 3" />
-                  <g transform={`translate(${lx}, ${ly})`} onDoubleClick={() => setFocusedPath([engName, item.key])} style={{ cursor: 'pointer' }} title="Doppelklick für Key-Detail-Diagramm">
+                  <g transform={`translate(${lx}, ${ly})`} onDoubleClick={() => setFocusedPath([engName, item.key])} style={{ cursor: 'pointer' }}>
                     <rect x="-60" y="-16" width="120" height="32" rx="6" fill="#090d16" stroke="#334155" strokeWidth="1.5" />
                     <text y="-1" textAnchor="middle" fill={eng.color} fontSize="10" fontWeight="bold">🔑 {item.key.slice(0, 12)}</text>
                     <text y="10" textAnchor="middle" fill="#94a3b8" fontSize="8">{item.value.slice(0, 14)}</text>
@@ -378,7 +463,7 @@ export default function MermaidTopologyDiagram({ entries, currentUrl = 'https://
       }
     }
 
-    // C. LEVEL 0: MAIN GLOBAL DIAGRAM VIEWS
+    // D. LEVEL 0: MAIN GLOBAL DIAGRAM VIEWS
     if (layoutType === 'subgraph_cluster') {
       return (
         <div style={{ width: '100%', display: 'flex', flexDirection: 'column', gap: 10 }}>
@@ -402,7 +487,6 @@ export default function MermaidTopologyDiagram({ entries, currentUrl = 'https://
                     flexDirection: 'column',
                   }}
                 >
-                  {/* Cluster Header with Double-Click Sub-Diagram Exploration */}
                   <div
                     onDoubleClick={() => setFocusedPath([eng.name])}
                     style={{
@@ -422,7 +506,6 @@ export default function MermaidTopologyDiagram({ entries, currentUrl = 'https://
                     <span style={{ fontSize: 9, color: '#38bdf8', fontWeight: 600 }}>🔍 Doppelklick für Sub-Diagramm</span>
                   </div>
 
-                  {/* Cluster Items */}
                   <div style={{ padding: 8, display: 'flex', flexDirection: 'column', gap: 4, maxHeight: 180, overflowY: 'auto' }}>
                     {matched.length === 0 ? (
                       <div style={{ fontSize: 10, color: '#64748b', fontStyle: 'italic', padding: 4 }}>
@@ -461,45 +544,6 @@ export default function MermaidTopologyDiagram({ entries, currentUrl = 'https://
       );
     }
 
-    if (layoutType === 'sequence_flow') {
-      const steps = [
-        { from: '👤 User', to: '🌐 Web App', msg: 'UI Interaction / Event', y: 70 },
-        { from: '🌐 Web App', to: '💾 Storage Engine', msg: 'setItem() / setCookie()', y: 140 },
-        { from: '💾 Storage Engine', to: '🛠️ Storage Suite', msg: 'Mutation Event / Interception', y: 210 },
-        { from: '🛠️ Storage Suite', to: '👤 User', msg: 'Real-time Glow & Provenance Blame', y: 280 },
-      ];
-
-      return (
-        <svg width="100%" height={height} viewBox={`0 0 ${width} ${height}`} style={{ background: '#030712', borderRadius: 8, minWidth: '100%', display: 'block' }}>
-          <line x1="80" y1="40" x2="80" y2="340" stroke="#334155" strokeDasharray="4 4" />
-          <line x1="240" y1="40" x2="240" y2="340" stroke="#334155" strokeDasharray="4 4" />
-          <line x1="400" y1="40" x2="400" y2="340" stroke="#334155" strokeDasharray="4 4" />
-          <line x1="560" y1="40" x2="560" y2="340" stroke="#334155" strokeDasharray="4 4" />
-
-          <rect x="30" y="10" width="100" height="28" rx="6" fill="#1e293b" stroke="#38bdf8" />
-          <text x="80" y="28" textAnchor="middle" fill="#f8fafc" fontSize="11" fontWeight="bold">👤 User</text>
-
-          <rect x="190" y="10" width="100" height="28" rx="6" fill="#1e293b" stroke="#a855f7" />
-          <text x="240" y="28" textAnchor="middle" fill="#f8fafc" fontSize="11" fontWeight="bold">🌐 Web App</text>
-
-          <rect x="350" y="10" width="100" height="28" rx="6" fill="#1e293b" stroke="#10b981" />
-          <text x="400" y="28" textAnchor="middle" fill="#f8fafc" fontSize="11" fontWeight="bold">💾 Engines</text>
-
-          <rect x="510" y="10" width="100" height="28" rx="6" fill="#1e293b" stroke="#f59e0b" />
-          <text x="560" y="28" textAnchor="middle" fill="#f8fafc" fontSize="11" fontWeight="bold">🛠️ Suite</text>
-
-          {steps.map((s, idx) => (
-            <g key={idx}>
-              <line x1="80" y1={s.y} x2="560" y2={s.y} stroke="#38bdf8" strokeWidth="1.5" strokeDasharray="3 3" />
-              <polygon points="556,276 564,280 556,284" fill="#38bdf8" />
-              <rect x="180" y={s.y - 12} width="280" height="22" rx="4" fill="#090d16" stroke="#334155" />
-              <text x="320" y={s.y + 3} textAnchor="middle" fill="#38bdf8" fontSize="10" fontWeight="600">{s.msg}</text>
-            </g>
-          ))}
-        </svg>
-      );
-    }
-
     if (layoutType === 'hierarchical_td') {
       const topY = 40;
       const midY = 150;
@@ -507,13 +551,11 @@ export default function MermaidTopologyDiagram({ entries, currentUrl = 'https://
 
       return (
         <svg width="100%" height={height} viewBox={`0 0 ${width} ${height}`} style={{ background: '#030712', borderRadius: 8, minWidth: '100%', display: 'block' }}>
-          {/* Top Domain Node */}
           <g transform={`translate(${cx}, ${topY})`}>
             <rect x="-90" y="-18" width="180" height="36" rx="8" fill="#0284c7" stroke="#38bdf8" strokeWidth="2" />
             <text y="4" textAnchor="middle" fill="#ffffff" fontSize="11" fontWeight="bold">🌐 {cleanDomain.slice(0, 22)}</text>
           </g>
 
-          {/* Engine Nodes & Branching Lines */}
           {engines.map((eng, idx) => {
             const engX = idx * 150 + 95;
             const matched = entries.filter((e) => e.target.toLowerCase().includes(eng.name.toLowerCase()));
@@ -522,7 +564,7 @@ export default function MermaidTopologyDiagram({ entries, currentUrl = 'https://
               <g key={eng.name}>
                 <path d={`M ${cx} ${topY + 18} L ${engX} ${midY - 18}`} stroke={eng.color} strokeWidth="1.5" strokeDasharray="3 3" />
 
-                <g transform={`translate(${engX}, ${midY})`} onDoubleClick={() => setFocusedPath([eng.name])} style={{ cursor: 'pointer' }} title="Doppelklick: Sub-Diagramm öffnen!">
+                <g transform={`translate(${engX}, ${midY})`} onDoubleClick={() => setFocusedPath([eng.name])} style={{ cursor: 'pointer' }}>
                   <rect x="-60" y="-18" width="120" height="36" rx="6" fill="#1e293b" stroke={eng.color} strokeWidth="2" />
                   <text y="-2" textAnchor="middle" fill="#f8fafc" fontSize="10" fontWeight="bold">{eng.icon} {eng.name}</text>
                   <text y="10" textAnchor="middle" fill={eng.color} fontSize="9">{matched.length} Einträge</text>
@@ -568,7 +610,7 @@ export default function MermaidTopologyDiagram({ entries, currentUrl = 'https://
               <g key={eng.name}>
                 <path d={`M ${leftX + 50} ${cy} C ${leftX + 140} ${cy}, ${midX - 140} ${engY}, ${midX - 60} ${engY}`} stroke={eng.color} strokeWidth="1.5" fill="none" strokeDasharray="3 3" />
 
-                <g transform={`translate(${midX}, ${engY})`} onDoubleClick={() => setFocusedPath([eng.name])} style={{ cursor: 'pointer' }} title="Doppelklick: Sub-Diagramm öffnen!">
+                <g transform={`translate(${midX}, ${engY})`} onDoubleClick={() => setFocusedPath([eng.name])} style={{ cursor: 'pointer' }}>
                   <rect x="-60" y="-18" width="120" height="36" rx="6" fill="#1e293b" stroke={eng.color} strokeWidth="2" />
                   <text y="-2" textAnchor="middle" fill="#f8fafc" fontSize="10" fontWeight="bold">{eng.icon} {eng.name}</text>
                   <text y="10" textAnchor="middle" fill={eng.color} fontSize="9">{matched.length} Einträge</text>
