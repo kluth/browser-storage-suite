@@ -565,11 +565,14 @@ export default function MermaidTopologyDiagram({ entries, currentUrl = 'https://
       const col2X = col1X + colWidth + 15;
 
       const positions: { x: number; y: number; height: number }[] = [];
+      const MAX_PREVIEW_ITEMS = 5;
 
       let leftY = 15;
       engines.forEach((eng, idx) => {
         const matched = entries.filter((e) => e.target.toLowerCase().includes(eng.name.toLowerCase()));
-        const clusterHeight = 44 + Math.max(matched.length, 1) * 58 + 10;
+        const displayItems = matched.slice(0, MAX_PREVIEW_ITEMS);
+        const hasMore = matched.length > MAX_PREVIEW_ITEMS;
+        const clusterHeight = 44 + Math.max(displayItems.length, 1) * 58 + (hasMore ? 38 : 0) + 10;
 
         if (idx % 2 === 0) {
           positions[idx] = { x: col1X, y: leftY, height: clusterHeight };
@@ -580,7 +583,9 @@ export default function MermaidTopologyDiagram({ entries, currentUrl = 'https://
       let rightY = 15;
       engines.forEach((eng, idx) => {
         const matched = entries.filter((e) => e.target.toLowerCase().includes(eng.name.toLowerCase()));
-        const clusterHeight = 44 + Math.max(matched.length, 1) * 58 + 10;
+        const displayItems = matched.slice(0, MAX_PREVIEW_ITEMS);
+        const hasMore = matched.length > MAX_PREVIEW_ITEMS;
+        const clusterHeight = 44 + Math.max(displayItems.length, 1) * 58 + (hasMore ? 38 : 0) + 10;
 
         if (idx % 2 === 1) {
           positions[idx] = { x: col2X, y: rightY, height: clusterHeight };
@@ -602,6 +607,8 @@ export default function MermaidTopologyDiagram({ entries, currentUrl = 'https://
           >
             {engines.map((eng, engIdx) => {
               const matched = entries.filter((e) => e.target.toLowerCase().includes(eng.name.toLowerCase()));
+              const displayItems = matched.slice(0, MAX_PREVIEW_ITEMS);
+              const remainingCount = matched.length - MAX_PREVIEW_ITEMS;
               const pos = positions[engIdx];
               const clusterHeight = pos.height;
 
@@ -641,96 +648,129 @@ export default function MermaidTopologyDiagram({ entries, currentUrl = 'https://
                         userSelect: 'none',
                         gap: 4,
                       }}
-                      title="Doppelklick: Dieses Cluster im Sub-Diagramm öffnen"
+                      title="Doppelklick: Dieses Cluster in der Einzelansicht öffnen"
                     >
                       <span style={{ fontSize: 11, fontWeight: 700, color: '#f8fafc', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
                         {eng.icon} {eng.name.toUpperCase()} ({matched.length})
                       </span>
                       <span style={{ fontSize: 8.5, color: '#38bdf8', fontWeight: 600, background: '#38bdf81a', padding: '2px 6px', borderRadius: 4, flexShrink: 0 }}>
-                        🔍 Zoom
+                        🔍 Einzelansicht
                       </span>
                     </div>
                   </foreignObject>
 
-                  {/* Cluster Items */}
+                  {/* Cluster Items (Max 5 in 2-Column Overview) */}
                   {matched.length === 0 ? (
                     <text x="15" y="60" fill="#64748b" fontSize="9" fontStyle="italic">
                       (Keine Einträge in diesem Cluster)
                     </text>
                   ) : (
-                    matched.map((item, itemIdx) => {
-                      const itemY = 44 + itemIdx * 58;
-                      const formattedVal = formatValuePayload(item.value).replace(/[\r\n]+/g, ' ');
-                      const byteSize = new Blob([item.key + item.value]).size;
+                    <>
+                      {displayItems.map((item, itemIdx) => {
+                        const itemY = 44 + itemIdx * 58;
+                        const formattedVal = formatValuePayload(item.value).replace(/[\r\n]+/g, ' ');
+                        const byteSize = new Blob([item.key + item.value]).size;
 
-                      return (
-                        <foreignObject key={itemIdx} x="10" y={itemY} width={colWidth - 20} height="50">
-                          <div
-                            onDoubleClick={(e) => {
-                              e.stopPropagation();
-                              setFocusedPath([eng.name, item.key]);
-                            }}
-                            style={{
-                              width: '100%',
-                              height: '100%',
-                              background: '#030712',
-                              border: '1px solid #1e293b',
-                              borderRadius: 6,
-                              padding: '5px 8px',
-                              boxSizing: 'border-box',
-                              display: 'flex',
-                              flexDirection: 'column',
-                              justifyContent: 'space-between',
-                              cursor: 'pointer',
-                              overflow: 'hidden',
-                            }}
-                            title={`🔑 ${item.key}\n📄 ${item.value}`}
-                          >
-                            <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', gap: 6 }}>
-                              <span
+                        return (
+                          <foreignObject key={itemIdx} x="10" y={itemY} width={colWidth - 20} height="50">
+                            <div
+                              onDoubleClick={(e) => {
+                                e.stopPropagation();
+                                setFocusedPath([eng.name, item.key]);
+                              }}
+                              style={{
+                                width: '100%',
+                                height: '100%',
+                                background: '#030712',
+                                border: '1px solid #1e293b',
+                                borderRadius: 6,
+                                padding: '5px 8px',
+                                boxSizing: 'border-box',
+                                display: 'flex',
+                                flexDirection: 'column',
+                                justifyContent: 'space-between',
+                                cursor: 'pointer',
+                                overflow: 'hidden',
+                              }}
+                              title={`🔑 ${item.key}\n📄 ${item.value}`}
+                            >
+                              <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', gap: 6 }}>
+                                <span
+                                  style={{
+                                    color: eng.color,
+                                    fontWeight: 700,
+                                    fontSize: 10.5,
+                                    fontFamily: 'monospace',
+                                    overflow: 'hidden',
+                                    textOverflow: 'ellipsis',
+                                    whiteSpace: 'nowrap',
+                                  }}
+                                >
+                                  🔑 {item.key}
+                                </span>
+                                <span
+                                  style={{
+                                    color: '#a855f7',
+                                    fontSize: 8,
+                                    background: '#a855f71a',
+                                    border: '1px solid #a855f744',
+                                    padding: '1px 5px',
+                                    borderRadius: 4,
+                                    fontWeight: 600,
+                                    flexShrink: 0,
+                                  }}
+                                >
+                                  {byteSize} B
+                                </span>
+                              </div>
+                              <div
                                 style={{
-                                  color: eng.color,
-                                  fontWeight: 700,
-                                  fontSize: 10.5,
+                                  color: '#94a3b8',
+                                  fontSize: 8.5,
                                   fontFamily: 'monospace',
                                   overflow: 'hidden',
                                   textOverflow: 'ellipsis',
                                   whiteSpace: 'nowrap',
                                 }}
                               >
-                                🔑 {item.key}
-                              </span>
-                              <span
-                                style={{
-                                  color: '#a855f7',
-                                  fontSize: 8,
-                                  background: '#a855f71a',
-                                  border: '1px solid #a855f744',
-                                  padding: '1px 5px',
-                                  borderRadius: 4,
-                                  fontWeight: 600,
-                                  flexShrink: 0,
-                                }}
-                              >
-                                {byteSize} B
-                              </span>
+                                {formattedVal}
+                              </div>
                             </div>
-                            <div
-                              style={{
-                                color: '#94a3b8',
-                                fontSize: 8.5,
-                                fontFamily: 'monospace',
-                                overflow: 'hidden',
-                                textOverflow: 'ellipsis',
-                                whiteSpace: 'nowrap',
-                              }}
-                            >
-                              {formattedVal}
-                            </div>
+                          </foreignObject>
+                        );
+                      })}
+
+                      {/* Expansion Banner for remaining entries */}
+                      {remainingCount > 0 && (
+                        <foreignObject x="10" y={44 + displayItems.length * 58} width={colWidth - 20} height="32">
+                          <div
+                            onDoubleClick={(e) => {
+                              e.stopPropagation();
+                              setFocusedPath([eng.name]);
+                            }}
+                            style={{
+                              width: '100%',
+                              height: '100%',
+                              background: '#1e293b66',
+                              border: `1.5px dashed ${eng.color}`,
+                              borderRadius: 6,
+                              display: 'flex',
+                              alignItems: 'center',
+                              justifyContent: 'center',
+                              color: '#38bdf8',
+                              fontSize: 9,
+                              fontWeight: 700,
+                              cursor: 'pointer',
+                              userSelect: 'none',
+                              boxSizing: 'border-box',
+                            }}
+                            title="Doppelklick: Cluster-Einzelansicht öffnen, um ALLE Einträge vollständig zu sehen"
+                          >
+                            <span>➕ ... und {remainingCount} weitere (Doppelklick zum Ausklappen)</span>
                           </div>
                         </foreignObject>
-                      );
-                    })
+                      )}
+                    </>
                   )}
                 </g>
               );
