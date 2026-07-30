@@ -566,7 +566,7 @@ export default function MermaidTopologyDiagram({ entries, currentUrl = 'https://
       let leftY = 15;
       engines.forEach((eng, idx) => {
         const matched = entries.filter((e) => e.target.toLowerCase().includes(eng.name.toLowerCase()));
-        const clusterHeight = 42 + Math.max(matched.length, 1) * 60 + 10;
+        const clusterHeight = 44 + Math.max(matched.length, 1) * 58 + 10;
 
         if (idx % 2 === 0) {
           positions[idx] = { x: col1X, y: leftY, height: clusterHeight };
@@ -577,7 +577,7 @@ export default function MermaidTopologyDiagram({ entries, currentUrl = 'https://
       let rightY = 15;
       engines.forEach((eng, idx) => {
         const matched = entries.filter((e) => e.target.toLowerCase().includes(eng.name.toLowerCase()));
-        const clusterHeight = 42 + Math.max(matched.length, 1) * 60 + 10;
+        const clusterHeight = 44 + Math.max(matched.length, 1) * 58 + 10;
 
         if (idx % 2 === 1) {
           positions[idx] = { x: col2X, y: rightY, height: clusterHeight };
@@ -615,74 +615,116 @@ export default function MermaidTopologyDiagram({ entries, currentUrl = 'https://
                     strokeWidth="1.5"
                   />
 
-                  {/* Subgraph Header (Double-Click to Drill Down) */}
-                  <g
-                    onDoubleClick={(e) => {
-                      e.stopPropagation();
-                      setFocusedPath([eng.name]);
-                    }}
-                    style={{ cursor: 'pointer' }}
-                  >
-                    <rect
-                      x="0"
-                      y="0"
-                      width={colWidth}
-                      height="32"
-                      rx="8"
-                      fill="#1e293b"
-                      stroke={eng.color}
-                      strokeWidth="1.5"
-                    />
-                    <text x="10" y="20" fill="#f8fafc" fontSize="10" fontWeight="bold">
-                      {eng.icon} {eng.name.toUpperCase()} ({matched.length})
-                    </text>
-                    <text x={colWidth - 10} y="20" textAnchor="end" fill="#38bdf8" fontSize="8" fontWeight="bold">
-                      🔍 Sub-Diagramm
-                    </text>
-                  </g>
+                  {/* Subgraph Header (Double-Click to Drill Down) via foreignObject for zero text overflow */}
+                  <foreignObject x="0" y="0" width={colWidth} height="36">
+                    <div
+                      onDoubleClick={(e) => {
+                        e.stopPropagation();
+                        setFocusedPath([eng.name]);
+                      }}
+                      style={{
+                        width: '100%',
+                        height: '100%',
+                        background: '#1e293b',
+                        border: `1.5px solid ${eng.color}`,
+                        borderRadius: '8px 8px 0 0',
+                        padding: '0 10px',
+                        boxSizing: 'border-box',
+                        display: 'flex',
+                        alignItems: 'center',
+                        justifyContent: 'space-between',
+                        cursor: 'pointer',
+                        userSelect: 'none',
+                        gap: 4,
+                      }}
+                      title="Doppelklick: Dieses Cluster im Sub-Diagramm öffnen"
+                    >
+                      <span style={{ fontSize: 11, fontWeight: 700, color: '#f8fafc', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
+                        {eng.icon} {eng.name.toUpperCase()} ({matched.length})
+                      </span>
+                      <span style={{ fontSize: 8.5, color: '#38bdf8', fontWeight: 600, background: '#38bdf81a', padding: '2px 6px', borderRadius: 4, flexShrink: 0 }}>
+                        🔍 Zoom
+                      </span>
+                    </div>
+                  </foreignObject>
 
                   {/* Cluster Items */}
                   {matched.length === 0 ? (
-                    <text x="15" y="58" fill="#64748b" fontSize="9" fontStyle="italic">
+                    <text x="15" y="60" fill="#64748b" fontSize="9" fontStyle="italic">
                       (Keine Einträge in diesem Cluster)
                     </text>
                   ) : (
                     matched.map((item, itemIdx) => {
-                      const itemY = 40 + itemIdx * 60;
-                      const formattedVal = formatValuePayload(item.value).replace(/[\r\n]+/g, ' ').slice(0, 28);
+                      const itemY = 44 + itemIdx * 58;
+                      const formattedVal = formatValuePayload(item.value).replace(/[\r\n]+/g, ' ');
                       const byteSize = new Blob([item.key + item.value]).size;
 
                       return (
-                        <g
-                          key={itemIdx}
-                          transform={`translate(10, ${itemY})`}
-                          onDoubleClick={(e) => {
-                            e.stopPropagation();
-                            setFocusedPath([eng.name, item.key]);
-                          }}
-                          style={{ cursor: 'pointer' }}
-                        >
-                          <rect
-                            x="0"
-                            y="0"
-                            width={colWidth - 20}
-                            height="48"
-                            rx="6"
-                            fill="#030712"
-                            stroke="#1e293b"
-                            strokeWidth="1"
-                          />
-                          <text x="10" y="18" fill={eng.color} fontSize="10" fontWeight="bold" fontFamily="monospace">
-                            🔑 {item.key.slice(0, 18)}
-                          </text>
-                          <rect x={colWidth - 75} y="6" width="50" height="16" rx="4" fill="#a855f722" stroke="#a855f7" strokeWidth="1" />
-                          <text x={colWidth - 50} y="17" textAnchor="middle" fill="#a855f7" fontSize="8" fontWeight="bold">
-                            {byteSize} B
-                          </text>
-                          <text x="10" y="36" fill="#94a3b8" fontSize="8.5" fontFamily="monospace">
-                            {formattedVal}
-                          </text>
-                        </g>
+                        <foreignObject key={itemIdx} x="10" y={itemY} width={colWidth - 20} height="50">
+                          <div
+                            onDoubleClick={(e) => {
+                              e.stopPropagation();
+                              setFocusedPath([eng.name, item.key]);
+                            }}
+                            style={{
+                              width: '100%',
+                              height: '100%',
+                              background: '#030712',
+                              border: '1px solid #1e293b',
+                              borderRadius: 6,
+                              padding: '5px 8px',
+                              boxSizing: 'border-box',
+                              display: 'flex',
+                              flexDirection: 'column',
+                              justifyContent: 'space-between',
+                              cursor: 'pointer',
+                              overflow: 'hidden',
+                            }}
+                            title={`🔑 ${item.key}\n📄 ${item.value}`}
+                          >
+                            <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', gap: 6 }}>
+                              <span
+                                style={{
+                                  color: eng.color,
+                                  fontWeight: 700,
+                                  fontSize: 10.5,
+                                  fontFamily: 'monospace',
+                                  overflow: 'hidden',
+                                  textOverflow: 'ellipsis',
+                                  whiteSpace: 'nowrap',
+                                }}
+                              >
+                                🔑 {item.key}
+                              </span>
+                              <span
+                                style={{
+                                  color: '#a855f7',
+                                  fontSize: 8,
+                                  background: '#a855f71a',
+                                  border: '1px solid #a855f744',
+                                  padding: '1px 5px',
+                                  borderRadius: 4,
+                                  fontWeight: 600,
+                                  flexShrink: 0,
+                                }}
+                              >
+                                {byteSize} B
+                              </span>
+                            </div>
+                            <div
+                              style={{
+                                color: '#94a3b8',
+                                fontSize: 8.5,
+                                fontFamily: 'monospace',
+                                overflow: 'hidden',
+                                textOverflow: 'ellipsis',
+                                whiteSpace: 'nowrap',
+                              }}
+                            >
+                              {formattedVal}
+                            </div>
+                          </div>
+                        </foreignObject>
                       );
                     })
                   )}
