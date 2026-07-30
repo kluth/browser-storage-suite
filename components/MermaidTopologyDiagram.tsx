@@ -178,6 +178,7 @@ export default function MermaidTopologyDiagram({ entries, currentUrl = 'https://
     const width = 640;
     const height = 420;
     const cx = width / 2;
+    const cy = height / 2;
 
     // Exploded View for Engine Detail Exploration
     if (explodedEngine) {
