@@ -17,6 +17,7 @@ import {
   Activity,
   Pin,
 } from 'lucide-react';
+import { HighlightedCodeSpan } from './MermaidTopologyDiagram';
 
 export interface GridRow {
   id: number;
@@ -172,20 +173,20 @@ export default function VirtualizedDataGrid({
     if (format === 'pretty_json') {
       try {
         const parsed = JSON.parse(row.value);
-        return <span style={{ color: '#a855f7', fontFamily: 'monospace' }}>{JSON.stringify(parsed, null, 2)}</span>;
+        return <HighlightedCodeSpan text={JSON.stringify(parsed, null, 2)} showLineNumbers={true} />;
       } catch {
-        return <span style={{ color: '#94a3b8' }}>{row.value}</span>;
+        return <HighlightedCodeSpan text={row.value} showLineNumbers={true} />;
       }
     }
 
     if (format === 'epoch_date') {
       const num = Number(row.value);
       if (!isNaN(num)) {
-        return <span style={{ color: '#10b981' }}>{new Date(num > 1e11 ? num : num * 1000).toLocaleString()}</span>;
+        return <span style={{ color: '#10b981' }}>📅 {new Date(num > 1e11 ? num : num * 1000).toLocaleString()}</span>;
       }
     }
 
-    return <span>{row.value}</span>;
+    return <HighlightedCodeSpan text={row.value} />;
   };
 
   return (
@@ -523,26 +524,21 @@ export default function VirtualizedDataGrid({
                       </button>
                     </div>
                   </div>
-                  <pre
+                  <div
                     onDoubleClick={() => startEditing(row)}
                     title="💡 Doppelklick zum Bearbeiten des Werts"
                     style={{
-                      fontFamily: 'monospace',
-                      fontSize: 11,
                       background: '#030712',
                       padding: 10,
                       borderRadius: 6,
                       border: '1px solid #1e293b',
-                      color: '#38bdf8',
-                      whiteSpace: 'pre-wrap',
-                      wordBreak: 'break-all',
                       maxHeight: '200px',
                       overflowY: 'auto',
                       cursor: 'pointer',
                     }}
                   >
-                    {renderFormattedValue(row, currentFormat)}
-                  </pre>
+                    <HighlightedCodeSpan text={row.value} showLineNumbers={true} />
+                  </div>
                 </div>
               ) : null}
             </div>
