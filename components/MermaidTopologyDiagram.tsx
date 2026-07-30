@@ -557,121 +557,139 @@ export default function MermaidTopologyDiagram({ entries, currentUrl = 'https://
 
     // D. LEVEL 0: MAIN GLOBAL DIAGRAM VIEWS
     if (layoutType === 'subgraph_cluster') {
-      return (
-        <div style={{ width: '100%', display: 'flex', flexDirection: 'column', gap: 12 }}>
-          <div style={{ fontSize: 11, color: '#94a3b8', display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
-            <span>📦 Storage Cluster Vollansicht — Alle Daten & Formatierungen vollständig expandiert:</span>
-            <span style={{ fontSize: 10, color: '#38bdf8', fontWeight: 600 }}>💡 Doppelklick auf Header/Card für Fokus-Ansicht</span>
-          </div>
+      const colWidth = Math.max(260, Math.floor((width - 45) / 2));
+      const col1X = 15;
+      const col2X = col1X + colWidth + 15;
 
-          <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(320px, 1fr))', gap: 14, width: '100%' }}>
-            {engines.map((eng) => {
+      const positions: { x: number; y: number; height: number }[] = [];
+
+      let leftY = 15;
+      engines.forEach((eng, idx) => {
+        const matched = entries.filter((e) => e.target.toLowerCase().includes(eng.name.toLowerCase()));
+        const clusterHeight = 42 + Math.max(matched.length, 1) * 60 + 10;
+
+        if (idx % 2 === 0) {
+          positions[idx] = { x: col1X, y: leftY, height: clusterHeight };
+          leftY += clusterHeight + 15;
+        }
+      });
+
+      let rightY = 15;
+      engines.forEach((eng, idx) => {
+        const matched = entries.filter((e) => e.target.toLowerCase().includes(eng.name.toLowerCase()));
+        const clusterHeight = 42 + Math.max(matched.length, 1) * 60 + 10;
+
+        if (idx % 2 === 1) {
+          positions[idx] = { x: col2X, y: rightY, height: clusterHeight };
+          rightY += clusterHeight + 15;
+        }
+      });
+
+      const svgCalculatedHeight = Math.max(420, Math.max(leftY, rightY) + 15);
+      const canvasWidth = Math.max(width, col2X + colWidth + 15);
+
+      return (
+        <div style={{ width: '100%', maxHeight: 420, overflowY: 'auto', overflowX: 'auto', borderRadius: 8, border: '1px solid #1e293b', background: '#030712' }}>
+          <svg
+            width="100%"
+            height={svgCalculatedHeight}
+            viewBox={`0 0 ${canvasWidth} ${svgCalculatedHeight}`}
+            style={{ background: '#030712', display: 'block', minWidth: '100%' }}
+          >
+            {engines.map((eng, engIdx) => {
               const matched = entries.filter((e) => e.target.toLowerCase().includes(eng.name.toLowerCase()));
+              const pos = positions[engIdx];
+              const clusterHeight = pos.height;
 
               return (
-                <div
-                  key={eng.name}
-                  onDoubleClick={(e) => {
-                    e.stopPropagation();
-                    setFocusedPath([eng.name]);
-                  }}
-                  style={{
-                    background: '#090d16',
-                    border: `1.5px solid ${eng.color}`,
-                    borderRadius: 8,
-                    overflow: 'hidden',
-                    display: 'flex',
-                    flexDirection: 'column',
-                    cursor: 'pointer',
-                    boxShadow: '0 4px 12px rgba(0,0,0,0.3)',
-                    height: 'fit-content',
-                  }}
-                  title="Doppelklick: Dieses Cluster im Sub-Diagramm öffnen"
-                >
-                  <div
-                    style={{
-                      background: '#1e293b',
-                      padding: '10px 14px',
-                      display: 'flex',
-                      alignItems: 'center',
-                      justifyContent: 'space-between',
-                      userSelect: 'none',
-                      borderBottom: `1.5px solid ${eng.color}44`,
+                <g key={eng.name} transform={`translate(${pos.x}, ${pos.y})`}>
+                  {/* Subgraph Cluster Box */}
+                  <rect
+                    x="0"
+                    y="0"
+                    width={colWidth}
+                    height={clusterHeight}
+                    rx="8"
+                    fill="#090d16"
+                    stroke={eng.color}
+                    strokeWidth="1.5"
+                  />
+
+                  {/* Subgraph Header (Double-Click to Drill Down) */}
+                  <g
+                    onDoubleClick={(e) => {
+                      e.stopPropagation();
+                      setFocusedPath([eng.name]);
                     }}
+                    style={{ cursor: 'pointer' }}
                   >
-                    <span style={{ fontSize: 12, fontWeight: 700, color: eng.color }}>
-                      {eng.icon} {eng.name.toUpperCase()} ({matched.length} Einträge)
-                    </span>
-                    <span style={{ fontSize: 10, color: '#38bdf8', fontWeight: 600, background: '#38bdf81a', padding: '2px 8px', borderRadius: 4 }}>
+                    <rect
+                      x="0"
+                      y="0"
+                      width={colWidth}
+                      height="32"
+                      rx="8"
+                      fill="#1e293b"
+                      stroke={eng.color}
+                      strokeWidth="1.5"
+                    />
+                    <text x="10" y="20" fill="#f8fafc" fontSize="10" fontWeight="bold">
+                      {eng.icon} {eng.name.toUpperCase()} ({matched.length})
+                    </text>
+                    <text x={colWidth - 10} y="20" textAnchor="end" fill="#38bdf8" fontSize="8" fontWeight="bold">
                       🔍 Sub-Diagramm
-                    </span>
-                  </div>
+                    </text>
+                  </g>
 
-                  <div style={{ padding: 12, display: 'flex', flexDirection: 'column', gap: 10 }}>
-                    {matched.length === 0 ? (
-                      <div style={{ fontSize: 10, color: '#64748b', fontStyle: 'italic', padding: 8 }}>
-                        (Keine Einträge in diesem Storage Cluster)
-                      </div>
-                    ) : (
-                      matched.map((item, idx) => {
-                        const formattedVal = formatValuePayload(item.value);
-                        const byteSize = new Blob([item.key + item.value]).size;
+                  {/* Cluster Items */}
+                  {matched.length === 0 ? (
+                    <text x="15" y="58" fill="#64748b" fontSize="9" fontStyle="italic">
+                      (Keine Einträge in diesem Cluster)
+                    </text>
+                  ) : (
+                    matched.map((item, itemIdx) => {
+                      const itemY = 40 + itemIdx * 60;
+                      const formattedVal = formatValuePayload(item.value).replace(/[\r\n]+/g, ' ').slice(0, 28);
+                      const byteSize = new Blob([item.key + item.value]).size;
 
-                        return (
-                          <div
-                            key={idx}
-                            onDoubleClick={(e) => {
-                              e.stopPropagation();
-                              setFocusedPath([eng.name, item.key]);
-                            }}
-                            style={{
-                              background: '#030712',
-                              border: '1px solid #1e293b',
-                              borderRadius: 6,
-                              padding: '10px 12px',
-                              fontSize: 10,
-                              fontFamily: 'monospace',
-                              display: 'flex',
-                              flexDirection: 'column',
-                              gap: 6,
-                              cursor: 'pointer',
-                            }}
-                            title="Doppelklick: Sub-Diagramm für diesen Key öffnen"
-                          >
-                            <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
-                              <span style={{ color: eng.color, fontWeight: 700, fontSize: 11 }}>
-                                🔑 {item.key}
-                              </span>
-                              <span style={{ color: '#a855f7', fontSize: 9, background: '#a855f71a', padding: '2px 6px', borderRadius: 4, fontWeight: 600 }}>
-                                {byteSize} B
-                              </span>
-                            </div>
-
-                            <pre
-                              style={{
-                                margin: 0,
-                                background: '#090d16',
-                                border: '1px solid #1e293b',
-                                borderRadius: 4,
-                                padding: 8,
-                                fontSize: 9.5,
-                                color: '#e2e8f0',
-                                whiteSpace: 'pre-wrap',
-                                wordBreak: 'break-all',
-                                fontFamily: 'monospace',
-                              }}
-                            >
-                              {formattedVal}
-                            </pre>
-                          </div>
-                        );
-                      })
-                    )}
-                  </div>
-                </div>
+                      return (
+                        <g
+                          key={itemIdx}
+                          transform={`translate(10, ${itemY})`}
+                          onDoubleClick={(e) => {
+                            e.stopPropagation();
+                            setFocusedPath([eng.name, item.key]);
+                          }}
+                          style={{ cursor: 'pointer' }}
+                        >
+                          <rect
+                            x="0"
+                            y="0"
+                            width={colWidth - 20}
+                            height="48"
+                            rx="6"
+                            fill="#030712"
+                            stroke="#1e293b"
+                            strokeWidth="1"
+                          />
+                          <text x="10" y="18" fill={eng.color} fontSize="10" fontWeight="bold" fontFamily="monospace">
+                            🔑 {item.key.slice(0, 18)}
+                          </text>
+                          <rect x={colWidth - 75} y="6" width="50" height="16" rx="4" fill="#a855f722" stroke="#a855f7" strokeWidth="1" />
+                          <text x={colWidth - 50} y="17" textAnchor="middle" fill="#a855f7" fontSize="8" fontWeight="bold">
+                            {byteSize} B
+                          </text>
+                          <text x="10" y="36" fill="#94a3b8" fontSize="8.5" fontFamily="monospace">
+                            {formattedVal}
+                          </text>
+                        </g>
+                      );
+                    })
+                  )}
+                </g>
               );
             })}
-          </div>
+          </svg>
         </div>
       );
     }
