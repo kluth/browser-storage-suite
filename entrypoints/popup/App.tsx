@@ -11,7 +11,7 @@ import { probeBackendEndpoint, DiscoveredBackend } from '@/utils/backendDiscover
 
 // Static imports for 3D Canvas & Mermaid Diagram to eliminate extension popup chunk-loading stalls
 import SpatialGraphCanvas from '@/components/SpatialGraphCanvas';
-import MermaidTopologyDiagram from '@/components/MermaidTopologyDiagram';
+import MermaidTopologyDiagram, { HighlightedCodeSpan } from '@/components/MermaidTopologyDiagram';
 import ErrorBoundary from '@/components/ErrorBoundary';
 
 type ViewTab = 'storage' | 'presets' | 'spatial' | 'virtual' | 'sql' | 'performance';
@@ -996,7 +996,7 @@ console.log('LocalStorage State:', data);`;
                           title="💡 Doppelklick zum Bearbeiten des Werts"
                           style={{ cursor: 'pointer' }}
                         >
-                          {item.value}
+                          <HighlightedCodeSpan text={item.value} />
                         </div>
                       )}
 

@@ -30,6 +30,118 @@ export function formatValuePayload(val: string): string {
   return val;
 }
 
+export function HighlightedCodeSpan({ text }: { text: string }) {
+  if (!text) return <span style={{ color: '#64748b', fontStyle: 'italic' }}>(empty)</span>;
+
+  // 1. JSON Parsing & Syntax Highlighting
+  try {
+    const parsed = JSON.parse(text);
+    if (typeof parsed === 'object' && parsed !== null) {
+      const jsonStr = JSON.stringify(parsed, null, 2);
+      const tokens = jsonStr.split(/("(\\u[a-zA-Z0-9]{4}|\\[^u]|[^\\"])*"(\s*:)?|\b(true|false|null)\b|-?\d+(?:\.\d*)?(?:[eE][+\-]?\d+)?)/g);
+
+      return (
+        <span>
+          {tokens.map((token, idx) => {
+            if (!token) return null;
+            if (/^"/.test(token)) {
+              if (/:$/.test(token)) {
+                const keyName = token.slice(0, -1);
+                return (
+                  <span key={idx}>
+                    <span style={{ color: '#38bdf8', fontWeight: 600 }}>{keyName}</span>
+                    <span style={{ color: '#94a3b8' }}>:</span>
+                  </span>
+                );
+              }
+              return <span key={idx} style={{ color: '#4ade80' }}>{token}</span>;
+            }
+            if (/true|false/.test(token)) {
+              return <span key={idx} style={{ color: '#f43f5e', fontWeight: 700 }}>{token}</span>;
+            }
+            if (/null/.test(token)) {
+              return <span key={idx} style={{ color: '#94a3b8', fontStyle: 'italic' }}>{token}</span>;
+            }
+            if (!isNaN(Number(token))) {
+              return <span key={idx} style={{ color: '#fb923c', fontWeight: 600 }}>{token}</span>;
+            }
+            return <span key={idx} style={{ color: '#cbd5e1' }}>{token}</span>;
+          })}
+        </span>
+      );
+    }
+  } catch {}
+
+  // 2. SQL Query Highlighting
+  if (/^\s*(SELECT|INSERT|UPDATE|DELETE|CREATE|DROP|ALTER|WITH)\b/i.test(text)) {
+    const sqlTokens = text.split(/(\b(?:SELECT|FROM|WHERE|AND|OR|INSERT|INTO|VALUES|UPDATE|SET|DELETE|JOIN|LEFT|RIGHT|INNER|OUTER|ON|GROUP|BY|ORDER|LIMIT|CREATE|TABLE|PRIMARY|KEY|DEFAULT|NULL|NOT|IN)\b|'[^']*'|-?\d+)/gi);
+
+    return (
+      <span>
+        {sqlTokens.map((token, idx) => {
+          if (!token) return null;
+          if (/^(SELECT|FROM|WHERE|AND|OR|INSERT|INTO|VALUES|UPDATE|SET|DELETE|JOIN|LEFT|RIGHT|INNER|OUTER|ON|GROUP|BY|ORDER|LIMIT|CREATE|TABLE|PRIMARY|KEY|DEFAULT|NULL|NOT|IN)$/i.test(token)) {
+            return <span key={idx} style={{ color: '#f59e0b', fontWeight: 700 }}>{token.toUpperCase()}</span>;
+          }
+          if (/^'[^']*'$/.test(token)) {
+            return <span key={idx} style={{ color: '#4ade80' }}>{token}</span>;
+          }
+          if (!isNaN(Number(token))) {
+            return <span key={idx} style={{ color: '#fb923c', fontWeight: 600 }}>{token}</span>;
+          }
+          return <span key={idx} style={{ color: '#e2e8f0' }}>{token}</span>;
+        })}
+      </span>
+    );
+  }
+
+  // 3. Key-Value Query String / Cookie Highlighting
+  if (text.includes('=') && (text.includes('&') || text.includes(';'))) {
+    const parts = text.split(/([&;])/);
+    return (
+      <span>
+        {parts.map((part, idx) => {
+          if (part === '&' || part === ';') {
+            return <span key={idx} style={{ color: '#64748b', fontWeight: 700 }}>{part} </span>;
+          }
+          const eqIdx = part.indexOf('=');
+          if (eqIdx !== -1) {
+            const k = part.slice(0, eqIdx).trim();
+            const v = part.slice(eqIdx + 1).trim();
+            return (
+              <span key={idx}>
+                <span style={{ color: '#38bdf8', fontWeight: 600 }}>{k}</span>
+                <span style={{ color: '#64748b' }}>=</span>
+                <span style={{ color: '#4ade80' }}>{v}</span>
+              </span>
+            );
+          }
+          return <span key={idx} style={{ color: '#cbd5e1' }}>{part}</span>;
+        })}
+      </span>
+    );
+  }
+
+  // 4. URL Highlighting
+  if (/^https?:\/\//i.test(text)) {
+    return <span style={{ color: '#38bdf8', textDecoration: 'underline' }}>{text}</span>;
+  }
+
+  // 5. Primitive Booleans / Numbers
+  if (text === 'true' || text === 'false') {
+    return <span style={{ color: '#f43f5e', fontWeight: 700 }}>{text}</span>;
+  }
+  if (text === 'null' || text === 'undefined') {
+    return <span style={{ color: '#94a3b8', fontStyle: 'italic' }}>{text}</span>;
+  }
+  if (!isNaN(Number(text))) {
+    return <span style={{ color: '#fb923c', fontWeight: 600 }}>{text}</span>;
+  }
+
+  // Fallback string
+  return <span style={{ color: '#e2e8f0' }}>{text}</span>;
+}
+
 export interface MermaidTopologyDiagramProps {
   entries: StorageEntryItem[];
   currentUrl?: string;
@@ -338,11 +450,33 @@ export default function MermaidTopologyDiagram({ entries, currentUrl = 'https://
             <text y="10" textAnchor="middle" fill="#cbd5e1" fontSize="9">{engName}</text>
           </g>
 
-          <g transform={`translate(${cx + 160}, ${cy + 100})`}>
-            <rect x="-70" y="-20" width="140" height="40" rx="6" fill="#1e293b" stroke="#f59e0b" strokeWidth="1.5" />
-            <text y="-2" textAnchor="middle" fill="#f59e0b" fontSize="10" fontWeight="bold">📍 Provenance Trace</text>
-            <text y="10" textAnchor="middle" fill="#cbd5e1" fontSize="9">User Interception</text>
-          </g>
+          {/* Full Syntax-Highlighted Value Inspector Box */}
+          <foreignObject x={Math.max(15, cx - 220)} y={cy + 130} width={Math.min(width - 30, 440)} height="110">
+            <div
+              style={{
+                width: '100%',
+                height: '100%',
+                background: '#090d16',
+                border: '1.5px solid #38bdf8',
+                borderRadius: 8,
+                padding: '8px 12px',
+                fontSize: 10.5,
+                lineHeight: '1.5',
+                fontFamily: 'Consolas, Monaco, "Andale Mono", monospace',
+                overflow: 'auto',
+                boxSizing: 'border-box',
+                whiteSpace: 'pre-wrap',
+                wordBreak: 'break-all',
+                color: '#e2e8f0',
+                boxShadow: '0 4px 12px rgba(0,0,0,0.4)',
+              }}
+            >
+              <div style={{ color: '#38bdf8', fontWeight: 700, fontSize: 10, marginBottom: 4, display: 'flex', alignItems: 'center', gap: 4 }}>
+                📄 Formatted Value Code Payload:
+              </div>
+              <HighlightedCodeSpan text={valStr} />
+            </div>
+          </foreignObject>
         </svg>
       );
     }
@@ -565,7 +699,7 @@ export default function MermaidTopologyDiagram({ entries, currentUrl = 'https://
                             wordBreak: 'break-all',
                           }}
                         >
-                          {formattedVal}
+                          <HighlightedCodeSpan text={item.value} />
                         </div>
                       </div>
                     </foreignObject>
@@ -806,7 +940,7 @@ export default function MermaidTopologyDiagram({ entries, currentUrl = 'https://
                                   boxSizing: 'border-box',
                                 }}
                               >
-                                {formattedVal}
+                                <HighlightedCodeSpan text={item.value} />
                               </div>
                             </div>
                           </foreignObject>
