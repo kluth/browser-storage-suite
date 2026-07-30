@@ -58,26 +58,26 @@ export function generateMermaidCode(
     return code;
   }
 
-  // 2. Real Dynamic Sequence Flow Generator
+  // 2. Real Dynamic Web App Internal Sequence Flow Generator
   if (layoutType === 'sequence_flow') {
     let code = `sequenceDiagram\n`;
     code += `  autonumber\n`;
-    code += `  actor User as 👤 Developer / User\n`;
+    code += `  actor User as 👤 Web User / Dev\n`;
     code += `  participant Page as 🌐 Web App (${cleanDomain})\n`;
     code += `  participant Storage as 💾 Storage Engine\n`;
-    code += `  participant Suite as 🛠️ Storage Suite Interceptor\n`;
+    code += `  participant UI as 🖼️ DOM / UI State\n`;
 
     if (activeEntries.length === 0) {
-      code += `  User->>Page: Page Loaded (Keine Storage Mutation-Einträge)\n`;
+      code += `  User->>Page: Page Interaction (Keine Storage Mutations)\n`;
     } else {
       activeEntries.slice(0, 6).forEach((item, idx) => {
         const cleanKey = sanitize(item.key);
         const cleanVal = sanitize(item.value.slice(0, 16));
         const byteSize = new Blob([item.key + item.value]).size;
         code += `  User->>Page: Trigger Action #${idx + 1} (${cleanKey})\n`;
-        code += `  Page->>Storage: ${item.target}.setItem("${cleanKey}", "${cleanVal}")\n`;
-        code += `  Storage-->>Suite: Mutation Event Captured (${byteSize} B)\n`;
-        code += `  Suite->>User: Real-time Provenance Attribution & Glow\n`;
+        code += `  Page->>Storage: ${item.target}.setItem("${cleanKey}", "${cleanVal}") [${byteSize} B]\n`;
+        code += `  Storage-->>Page: StorageEvent Acknowledged\n`;
+        code += `  Page-->>UI: Re-render DOM & Hydrate UI State\n`;
       });
     }
     return code;
@@ -329,7 +329,7 @@ export default function MermaidTopologyDiagram({ entries, currentUrl = 'https://
       const xUser = 60;
       const xPage = 210;
       const xStorage = 390;
-      const xSuite = 570;
+      const xUI = 570;
 
       return (
         <svg width="100%" height={height} viewBox={`0 0 ${width} ${height}`} style={{ background: '#030712', borderRadius: 8, minWidth: '100%', display: 'block' }}>
@@ -337,7 +337,7 @@ export default function MermaidTopologyDiagram({ entries, currentUrl = 'https://
           <line x1={xUser} y1="45" x2={xUser} y2="390" stroke="#334155" strokeDasharray="4 4" />
           <line x1={xPage} y1="45" x2={xPage} y2="390" stroke="#334155" strokeDasharray="4 4" />
           <line x1={xStorage} y1="45" x2={xStorage} y2="390" stroke="#334155" strokeDasharray="4 4" />
-          <line x1={xSuite} y1="45" x2={xSuite} y2="390" stroke="#334155" strokeDasharray="4 4" />
+          <line x1={xUI} y1="45" x2={xUI} y2="390" stroke="#334155" strokeDasharray="4 4" />
 
           {/* Actor Header Boxes */}
           <rect x={xUser - 45} y="10" width="90" height="28" rx="6" fill="#1e293b" stroke="#38bdf8" />
@@ -347,12 +347,12 @@ export default function MermaidTopologyDiagram({ entries, currentUrl = 'https://
           <text x={xPage} y="28" textAnchor="middle" fill="#f8fafc" fontSize="10" fontWeight="bold">🌐 {cleanDomain.slice(0, 10)}</text>
 
           <rect x={xStorage - 55} y="10" width="110" height="28" rx="6" fill="#1e293b" stroke="#10b981" />
-          <text x={xStorage} y="28" textAnchor="middle" fill="#f8fafc" fontSize="10" fontWeight="bold">💾 Real Engine</text>
+          <text x={xStorage} y="28" textAnchor="middle" fill="#f8fafc" fontSize="10" fontWeight="bold">💾 Storage Engine</text>
 
-          <rect x={xSuite - 55} y="10" width="110" height="28" rx="6" fill="#1e293b" stroke="#f59e0b" />
-          <text x={xSuite} y="28" textAnchor="middle" fill="#f8fafc" fontSize="10" fontWeight="bold">🛠️ Storage Suite</text>
+          <rect x={xUI - 55} y="10" width="110" height="28" rx="6" fill="#1e293b" stroke="#f59e0b" />
+          <text x={xUI} y="28" textAnchor="middle" fill="#f8fafc" fontSize="10" fontWeight="bold">🖼️ DOM / UI State</text>
 
-          {/* Real Dynamic Storage Interception Sequence Rows */}
+          {/* Real Dynamic Storage Sequence Rows */}
           {displayItems.map((item, idx) => {
             const rowY = idx * 85 + 75;
             const targetColor = item.target.toLowerCase().includes('local')
@@ -369,7 +369,7 @@ export default function MermaidTopologyDiagram({ entries, currentUrl = 'https://
                 <polygon points={`${xPage - 6},${rowY - 4} ${xPage},${rowY} ${xPage - 6},${rowY + 4}`} fill="#38bdf8" />
                 <rect x={xUser + 10} y={rowY - 14} width="125" height="16" rx="3" fill="#090d16" stroke="#334155" />
                 <text x={xUser + 15} y={rowY - 2} fill="#38bdf8" fontSize="8" fontWeight="bold">
-                  1. Mutate [{item.key.slice(0, 10)}]
+                  1. Trigger [{item.key.slice(0, 10)}]
                 </text>
 
                 {/* Step 2: Page -> Storage Engine */}
@@ -380,12 +380,12 @@ export default function MermaidTopologyDiagram({ entries, currentUrl = 'https://
                   2. {item.target}.setItem("{item.key.slice(0, 8)}", "{item.value.slice(0, 6)}")
                 </text>
 
-                {/* Step 3: Storage Engine -> Storage Suite Interceptor */}
-                <line x1={xStorage} y1={rowY + 36} x2={xSuite} y2={rowY + 36} stroke="#f59e0b" strokeWidth="1.5" strokeDasharray="2 2" />
-                <polygon points={`${xSuite - 6},${rowY + 32} ${xSuite},${rowY + 36} ${xSuite - 6},${rowY + 40}`} fill="#f59e0b" />
+                {/* Step 3: Storage Engine -> Page DOM UI */}
+                <line x1={xStorage} y1={rowY + 36} x2={xUI} y2={rowY + 36} stroke="#f59e0b" strokeWidth="1.5" strokeDasharray="2 2" />
+                <polygon points={`${xUI - 6},${rowY + 32} ${xUI},${rowY + 36} ${xUI - 6},${rowY + 40}`} fill="#f59e0b" />
                 <rect x={xStorage + 10} y={rowY + 22} width="150" height="16" rx="3" fill="#090d16" stroke="#f59e0b" />
                 <text x={xStorage + 15} y={rowY + 34} fill="#f59e0b" fontSize="8" fontWeight="bold">
-                  3. Intercept & Blame ({byteSize} B)
+                  3. Hydrate UI State ({byteSize} B)
                 </text>
               </g>
             );

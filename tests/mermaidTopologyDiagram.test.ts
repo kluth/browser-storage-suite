@@ -49,6 +49,6 @@ describe('Mermaid Topology Diagram Generator', () => {
     const code = generateMermaidCode(sampleEntries, 'sequence_flow', 'https://example.com');
     expect(code).toContain('sequenceDiagram');
     expect(code).toContain('participant Page');
-    expect(code).toContain('participant Suite');
+    expect(code).toContain('participant UI');
   });
 });
