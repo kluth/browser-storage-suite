@@ -420,79 +420,143 @@ export default function MermaidTopologyDiagram({ entries, currentUrl = 'https://
       const eng = engines.find((e) => e.name.toLowerCase() === engName.toLowerCase()) || engines[0];
 
       if (layoutType === 'subgraph_cluster') {
-        return (
-          <div style={{ width: '100%', display: 'flex', flexDirection: 'column', gap: 12 }}>
-            <div style={{ fontSize: 11, color: eng.color, fontWeight: 700, display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
-              <span>{eng.icon} Engine Sub-Diagramm Focus: {engName.toUpperCase()} ({activeItems.length} Einträge)</span>
-              <span style={{ fontSize: 10, color: '#38bdf8' }}>💡 Doppelklick auf Karte für Key Details</span>
-            </div>
+        const colWidth = Math.max(270, Math.floor((width - 45) / 2));
+        const col1X = 15;
+        const col2X = col1X + colWidth + 15;
 
-            {activeItems.length === 0 ? (
-              <div style={{ padding: 20, textAlign: 'center', background: '#090d16', border: `1.5px solid ${eng.color}`, borderRadius: 8, color: '#64748b', fontSize: 11, fontStyle: 'italic' }}>
-                (Keine Einträge für {engName.toUpperCase()} vorhanden)
-              </div>
-            ) : (
-              <div style={{ display: 'flex', flexDirection: 'column', gap: 12, width: '100%' }}>
-                {activeItems.map((item, idx) => {
-                  const formattedVal = formatValuePayload(item.value);
+        const rowCount = Math.ceil(activeItems.length / 2);
+        const itemYStep = 75;
+        const headerHeight = 44;
+        const svgCalculatedHeight = Math.max(420, headerHeight + 20 + Math.max(rowCount, 1) * itemYStep + 20);
+        const canvasWidth = Math.max(width, col2X + colWidth + 15);
+
+        return (
+          <div style={{ width: '100%', borderRadius: 8, border: '1px solid #1e293b', background: '#030712' }}>
+            <svg
+              id="native_topology_svg_container"
+              width="100%"
+              height={svgCalculatedHeight}
+              viewBox={`0 0 ${canvasWidth} ${svgCalculatedHeight}`}
+              style={{ background: '#030712', display: 'block', minWidth: '100%' }}
+            >
+              {/* Header Box */}
+              <foreignObject x="15" y="15" width={canvasWidth - 30} height={headerHeight}>
+                <div
+                  style={{
+                    width: '100%',
+                    height: '100%',
+                    background: '#1e293b',
+                    border: `1.5px solid ${eng.color}`,
+                    borderRadius: 8,
+                    padding: '0 12px',
+                    boxSizing: 'border-box',
+                    display: 'flex',
+                    alignItems: 'center',
+                    justifyContent: 'space-between',
+                    gap: 6,
+                  }}
+                >
+                  <span style={{ fontSize: 12, fontWeight: 700, color: eng.color }}>
+                    {eng.icon} Engine Sub-Diagramm Focus: {engName.toUpperCase()} ({activeItems.length} Einträge)
+                  </span>
+                  <span style={{ fontSize: 10, color: '#38bdf8', fontWeight: 600 }}>
+                    💡 Doppelklick auf Karte für Key Details
+                  </span>
+                </div>
+              </foreignObject>
+
+              {/* Items Grid */}
+              {activeItems.length === 0 ? (
+                <text x={canvasWidth / 2} y="100" textAnchor="middle" fill="#64748b" fontSize="11" fontStyle="italic">
+                  (Keine Einträge für {engName.toUpperCase()} vorhanden)
+                </text>
+              ) : (
+                activeItems.map((item, idx) => {
+                  const colIdx = idx % 2;
+                  const rowIdx = Math.floor(idx / 2);
+                  const posX = colIdx === 0 ? col1X : col2X;
+                  const posY = 75 + rowIdx * itemYStep;
+                  const formattedVal = formatValuePayload(item.value).replace(/[\r\n]+/g, ' ');
                   const byteSize = new Blob([item.key + item.value]).size;
 
                   return (
-                    <div
-                      key={idx}
-                      onDoubleClick={(e) => {
-                        e.stopPropagation();
-                        setFocusedPath([engName, item.key]);
-                      }}
-                      style={{
-                        background: '#090d16',
-                        border: `1.5px solid ${eng.color}`,
-                        borderRadius: 8,
-                        padding: 12,
-                        cursor: 'pointer',
-                        display: 'flex',
-                        flexDirection: 'column',
-                        gap: 8,
-                        boxShadow: '0 4px 12px rgba(0,0,0,0.3)',
-                        boxSizing: 'border-box',
-                      }}
-                      title="Doppelklick: Sub-Diagramm für diesen Key öffnen"
-                    >
-                      <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
-                        <span style={{ color: eng.color, fontWeight: 700, fontSize: 12, fontFamily: 'monospace' }}>
-                          🔑 {item.key}
-                        </span>
-                        <span style={{ color: '#a855f7', fontSize: 10, background: '#a855f71a', padding: '2px 8px', borderRadius: 4, fontWeight: 600 }}>
-                          {byteSize} Bytes
-                        </span>
-                      </div>
-
+                    <foreignObject key={idx} x={posX} y={posY} width={colWidth} height="68">
                       <div
-                        style={{
-                          margin: 0,
-                          background: '#030712',
-                          border: '1px solid #1e293b',
-                          borderRadius: 6,
-                          padding: '10px 12px',
-                          fontSize: 11,
-                          lineHeight: '1.6',
-                          color: '#e2e8f0',
-                          whiteSpace: 'pre-wrap',
-                          wordBreak: 'break-all',
-                          fontFamily: 'Consolas, Monaco, "Andale Mono", monospace',
-                          boxSizing: 'border-box',
-                          minHeight: 38,
-                          display: 'flex',
-                          alignItems: 'center',
+                        onDoubleClick={(e) => {
+                          e.stopPropagation();
+                          setFocusedPath([engName, item.key]);
                         }}
+                        style={{
+                          width: '100%',
+                          height: '100%',
+                          background: '#090d16',
+                          border: `1.5px solid ${eng.color}`,
+                          borderRadius: 8,
+                          padding: '8px 10px',
+                          boxSizing: 'border-box',
+                          display: 'flex',
+                          flexDirection: 'column',
+                          justifyContent: 'space-between',
+                          cursor: 'pointer',
+                          overflow: 'hidden',
+                          boxShadow: '0 4px 12px rgba(0,0,0,0.3)',
+                        }}
+                        title={`🔑 Key: ${item.key}\n📄 Value: ${item.value}`}
                       >
-                        {formattedVal}
+                        <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', gap: 6, lineHeight: 1.3 }}>
+                          <span
+                            style={{
+                              color: eng.color,
+                              fontWeight: 700,
+                              fontSize: 11,
+                              fontFamily: 'monospace',
+                              overflow: 'hidden',
+                              textOverflow: 'ellipsis',
+                              whiteSpace: 'nowrap',
+                            }}
+                          >
+                            🔑 {item.key}
+                          </span>
+                          <span
+                            style={{
+                              color: '#a855f7',
+                              fontSize: 8.5,
+                              background: '#a855f71a',
+                              border: '1px solid #a855f744',
+                              padding: '1px 6px',
+                              borderRadius: 4,
+                              fontWeight: 600,
+                              flexShrink: 0,
+                            }}
+                          >
+                            {byteSize} B
+                          </span>
+                        </div>
+
+                        <div
+                          style={{
+                            background: '#030712',
+                            border: '1px solid #1e293b',
+                            borderRadius: 4,
+                            padding: '4px 8px',
+                            color: '#94a3b8',
+                            fontSize: 9.5,
+                            lineHeight: 1.45,
+                            fontFamily: 'Consolas, Monaco, "Andale Mono", monospace',
+                            overflow: 'hidden',
+                            textOverflow: 'ellipsis',
+                            whiteSpace: 'nowrap',
+                            boxSizing: 'border-box',
+                          }}
+                        >
+                          {formattedVal}
+                        </div>
                       </div>
-                    </div>
+                    </foreignObject>
                   );
-                })}
-              </div>
-            )}
+                })
+              )}
+            </svg>
           </div>
         );
       }
