@@ -428,11 +428,20 @@ export default function VirtualizedDataGrid({
                     <span style={{ fontSize: 11, color: '#38bdf8', fontWeight: 700, display: 'flex', alignItems: 'center', gap: 6 }}>
                       <Edit3 size={13} /> On-The-Fly Edit: {row.key}
                     </span>
-                    <span style={{ fontSize: 10, color: '#94a3b8' }}>Änderungen wirken sofort auf der Live-Seite</span>
+                    <span style={{ fontSize: 10, color: '#94a3b8' }}>↵ Enter = Speichern | ⇧+↵ = Neue Zeile</span>
                   </div>
                   <textarea
                     value={editingValue}
                     onChange={(e) => setEditingValue(e.target.value)}
+                    onKeyDown={(e) => {
+                      if (e.key === 'Enter' && !e.shiftKey) {
+                        e.preventDefault();
+                        handleSaveEdit(row);
+                      } else if (e.key === 'Escape') {
+                        cancelEditing();
+                      }
+                    }}
+                    placeholder="Wert eingeben... [Enter zum Speichern, Shift+Enter für neue Zeile]"
                     style={{
                       width: '100%',
                       minHeight: 70,

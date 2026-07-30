@@ -48,6 +48,10 @@ export default function App() {
   // Expandable Data Blame state per key
   const [expandedBlameKeys, setExpandedBlameKeys] = useState<Record<string, boolean>>({});
 
+  // Card View Double-Click Inline Editing State
+  const [cardEditingKey, setCardEditingKey] = useState<string | null>(null);
+  const [cardEditingValue, setCardEditingValue] = useState<string>('');
+
   // Smart Predicted Presets
   const [predictedPresets, setPredictedPresets] = useState<PredictedPreset[]>([]);
 
@@ -605,20 +609,94 @@ console.log('LocalStorage State:', data);`;
                     const isExpanded = !!expandedBlameKeys[c.name];
                     const blame = getStorageDataBlame(c.name, c.value);
 
+                    const isEditingCard = cardEditingKey === c.name;
+
                     return (
                       <div className="storage-card" key={c.name}>
                         <div className="card-header">
                           <span className="item-key">{c.name}</span>
-                          <button
-                            className="action-btn"
-                            title="Toggle Data Blame & Provenance"
-                            onClick={() => toggleBlameExpand(c.name)}
-                            style={{ fontSize: 11, display: 'flex', alignItems: 'center', gap: 4, color: isExpanded ? '#38bdf8' : '#94a3b8' }}
-                          >
-                            {isExpanded ? <ChevronDown size={14} /> : <ChevronRight size={14} />} Data Blame
-                          </button>
+                          <div style={{ display: 'flex', gap: 6, alignItems: 'center' }}>
+                            <button
+                              className="action-btn"
+                              title="Edit Cookie Value"
+                              onClick={() => {
+                                setCardEditingKey(c.name);
+                                setCardEditingValue(c.value);
+                              }}
+                              style={{ fontSize: 11, color: isEditingCard ? '#38bdf8' : '#94a3b8' }}
+                            >
+                              ✏️ Edit
+                            </button>
+                            <button
+                              className="action-btn"
+                              title="Toggle Data Blame & Provenance"
+                              onClick={() => toggleBlameExpand(c.name)}
+                              style={{ fontSize: 11, display: 'flex', alignItems: 'center', gap: 4, color: isExpanded ? '#38bdf8' : '#94a3b8' }}
+                            >
+                              {isExpanded ? <ChevronDown size={14} /> : <ChevronRight size={14} />} Data Blame
+                            </button>
+                          </div>
                         </div>
-                        <div className="item-value">{c.value}</div>
+
+                        {isEditingCard ? (
+                          <div style={{ marginTop: 6, display: 'flex', flexDirection: 'column', gap: 6 }}>
+                            <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
+                              <span style={{ fontSize: 10, color: '#38bdf8', fontWeight: 700 }}>✏️ Cookie Bearbeitung</span>
+                              <span style={{ fontSize: 9, color: '#94a3b8' }}>↵ Enter = Speichern | ⇧+↵ = Neue Zeile</span>
+                            </div>
+                            <textarea
+                              value={cardEditingValue}
+                              onChange={(e) => setCardEditingValue(e.target.value)}
+                              onKeyDown={(e) => {
+                                if (e.key === 'Enter' && !e.shiftKey) {
+                                  e.preventDefault();
+                                  handleUpdateStorageEntry(c.name, cardEditingValue);
+                                  setCardEditingKey(null);
+                                } else if (e.key === 'Escape') {
+                                  setCardEditingKey(null);
+                                }
+                              }}
+                              placeholder="Wert eingeben... [Enter zum Speichern, Shift+Enter für neue Zeile]"
+                              style={{
+                                width: '100%',
+                                minHeight: 60,
+                                background: '#030712',
+                                border: '1px solid #38bdf8',
+                                borderRadius: 6,
+                                padding: 6,
+                                color: '#f8fafc',
+                                fontFamily: 'monospace',
+                                fontSize: 11,
+                                resize: 'vertical',
+                              }}
+                            />
+                            <div style={{ display: 'flex', gap: 6, justifyContent: 'flex-end' }}>
+                              <button className="action-btn" onClick={() => setCardEditingKey(null)} style={{ fontSize: 10 }}>Abbrechen</button>
+                              <button
+                                className="btn-primary"
+                                onClick={() => {
+                                  handleUpdateStorageEntry(c.name, cardEditingValue);
+                                  setCardEditingKey(null);
+                                }}
+                                style={{ fontSize: 10, padding: '2px 8px', background: '#10b981', color: '#030712', fontWeight: 700 }}
+                              >
+                                💾 Speichern
+                              </button>
+                            </div>
+                          </div>
+                        ) : (
+                          <div
+                            className="item-value"
+                            onDoubleClick={() => {
+                              setCardEditingKey(c.name);
+                              setCardEditingValue(c.value);
+                            }}
+                            title="💡 Doppelklick zum Bearbeiten des Werts"
+                            style={{ cursor: 'pointer' }}
+                          >
+                            {c.value}
+                          </div>
+                        )}
 
                         {/* Expandable Data Blaming & History Drawer for Cookies */}
                         {isExpanded && (
@@ -716,21 +794,94 @@ console.log('LocalStorage State:', data);`;
                 .map((item) => {
                   const isExpanded = !!expandedBlameKeys[item.key];
                   const blame = getStorageDataBlame(item.key, item.value);
+                  const isEditingCard = cardEditingKey === item.key;
 
                   return (
                     <div className="storage-card" key={item.key}>
                       <div className="card-header">
                         <span className="item-key">{item.key}</span>
-                        <button
-                          className="action-btn"
-                          title="Toggle Data Blame & Provenance"
-                          onClick={() => toggleBlameExpand(item.key)}
-                          style={{ fontSize: 11, display: 'flex', alignItems: 'center', gap: 4, color: isExpanded ? '#38bdf8' : '#94a3b8' }}
-                        >
-                          {isExpanded ? <ChevronDown size={14} /> : <ChevronRight size={14} />} Data Blame
-                        </button>
+                        <div style={{ display: 'flex', gap: 6, alignItems: 'center' }}>
+                          <button
+                            className="action-btn"
+                            title="Edit Entry Value"
+                            onClick={() => {
+                              setCardEditingKey(item.key);
+                              setCardEditingValue(item.value);
+                            }}
+                            style={{ fontSize: 11, color: isEditingCard ? '#38bdf8' : '#94a3b8' }}
+                          >
+                            ✏️ Edit
+                          </button>
+                          <button
+                            className="action-btn"
+                            title="Toggle Data Blame & Provenance"
+                            onClick={() => toggleBlameExpand(item.key)}
+                            style={{ fontSize: 11, display: 'flex', alignItems: 'center', gap: 4, color: isExpanded ? '#38bdf8' : '#94a3b8' }}
+                          >
+                            {isExpanded ? <ChevronDown size={14} /> : <ChevronRight size={14} />} Data Blame
+                          </button>
+                        </div>
                       </div>
-                      <div className="item-value">{item.value}</div>
+
+                      {isEditingCard ? (
+                        <div style={{ marginTop: 6, display: 'flex', flexDirection: 'column', gap: 6 }}>
+                          <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
+                            <span style={{ fontSize: 10, color: '#38bdf8', fontWeight: 700 }}>✏️ Eintrag Bearbeitung ({item.key})</span>
+                            <span style={{ fontSize: 9, color: '#94a3b8' }}>↵ Enter = Speichern | ⇧+↵ = Neue Zeile</span>
+                          </div>
+                          <textarea
+                            value={cardEditingValue}
+                            onChange={(e) => setCardEditingValue(e.target.value)}
+                            onKeyDown={(e) => {
+                              if (e.key === 'Enter' && !e.shiftKey) {
+                                e.preventDefault();
+                                handleUpdateStorageEntry(item.key, cardEditingValue);
+                                setCardEditingKey(null);
+                              } else if (e.key === 'Escape') {
+                                setCardEditingKey(null);
+                              }
+                            }}
+                            placeholder="Wert eingeben... [Enter zum Speichern, Shift+Enter für neue Zeile]"
+                            style={{
+                              width: '100%',
+                              minHeight: 65,
+                              background: '#030712',
+                              border: '1px solid #38bdf8',
+                              borderRadius: 6,
+                              padding: 6,
+                              color: '#f8fafc',
+                              fontFamily: 'monospace',
+                              fontSize: 11,
+                              resize: 'vertical',
+                            }}
+                          />
+                          <div style={{ display: 'flex', gap: 6, justifyContent: 'flex-end' }}>
+                            <button className="action-btn" onClick={() => setCardEditingKey(null)} style={{ fontSize: 10 }}>Abbrechen</button>
+                            <button
+                              className="btn-primary"
+                              onClick={() => {
+                                handleUpdateStorageEntry(item.key, cardEditingValue);
+                                setCardEditingKey(null);
+                              }}
+                              style={{ fontSize: 10, padding: '2px 8px', background: '#10b981', color: '#030712', fontWeight: 700 }}
+                            >
+                              💾 Speichern
+                            </button>
+                          </div>
+                        </div>
+                      ) : (
+                        <div
+                          className="item-value"
+                          onDoubleClick={() => {
+                            setCardEditingKey(item.key);
+                            setCardEditingValue(item.value);
+                          }}
+                          title="💡 Doppelklick zum Bearbeiten des Werts"
+                          style={{ cursor: 'pointer' }}
+                        >
+                          {item.value}
+                        </div>
+                      )}
 
                       {/* Expandable Data Blaming Drawer */}
                       {isExpanded && (
