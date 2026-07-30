@@ -432,7 +432,7 @@ export default function MermaidTopologyDiagram({ entries, currentUrl = 'https://
                 (Keine Einträge für {engName.toUpperCase()} vorhanden)
               </div>
             ) : (
-              <div style={{ display: 'flex', flexDirection: 'column', gap: 12, width: '100%', maxHeight: 420, overflowY: 'auto', paddingRight: 4 }}>
+              <div style={{ display: 'flex', flexDirection: 'column', gap: 12, width: '100%' }}>
                 {activeItems.map((item, idx) => {
                   const formattedVal = formatValuePayload(item.value);
                   const byteSize = new Blob([item.key + item.value]).size;
@@ -481,8 +481,6 @@ export default function MermaidTopologyDiagram({ entries, currentUrl = 'https://
                           wordBreak: 'break-all',
                           fontFamily: 'Consolas, Monaco, "Andale Mono", monospace',
                           boxSizing: 'border-box',
-                          maxHeight: 180,
-                          overflowY: 'auto',
                         }}
                       >
                         {formattedVal}
@@ -594,8 +592,9 @@ export default function MermaidTopologyDiagram({ entries, currentUrl = 'https://
       const canvasWidth = Math.max(width, col2X + colWidth + 15);
 
       return (
-        <div style={{ width: '100%', maxHeight: 420, overflowY: 'auto', overflowX: 'auto', borderRadius: 8, border: '1px solid #1e293b', background: '#030712' }}>
+        <div style={{ width: '100%', borderRadius: 8, border: '1px solid #1e293b', background: '#030712' }}>
           <svg
+            id="native_topology_svg_container"
             width="100%"
             height={svgCalculatedHeight}
             viewBox={`0 0 ${canvasWidth} ${svgCalculatedHeight}`}
