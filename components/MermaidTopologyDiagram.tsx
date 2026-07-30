@@ -20,8 +20,13 @@ export function generateMermaidCode(
   layoutType: DiagramLayoutType,
   domainName: string = 'Active Page'
 ): string {
-  const sanitize = (text: string) => text.replace(/["'`\\]/g, '').replace(/[\r\n]/g, ' ');
-  const cleanDomain = sanitize(domainName.replace(/^https?:\/\//, ''));
+  const sanitize = (text: string) =>
+    String(text || '')
+      .replace(/["'`\\()[\]{}#&]/g, '')
+      .replace(/[\r\n]/g, ' ')
+      .trim();
+
+  const cleanDomain = sanitize(domainName.replace(/^https?:\/\//, '')) || 'Active Page';
 
   // Group entries by storage target
   const grouped: Record<string, StorageEntryItem[]> = {
@@ -142,7 +147,7 @@ export default function MermaidTopologyDiagram({ entries, currentUrl = 'https://
 
   useEffect(() => {
     let isMounted = true;
-    const elementId = `mermaid_diagram_${uniqueId}`;
+    const renderId = `mermaid_svg_${Math.random().toString(36).substring(2, 9)}`;
 
     import('mermaid')
       .then((m) => {
@@ -153,7 +158,7 @@ export default function MermaidTopologyDiagram({ entries, currentUrl = 'https://
           securityLevel: 'loose',
           fontFamily: 'monospace',
         });
-        return mermaidInstance.render(elementId, mermaidCode);
+        return mermaidInstance.render(renderId, mermaidCode);
       })
       .then(({ svg }) => {
         if (isMounted) {
@@ -171,7 +176,7 @@ export default function MermaidTopologyDiagram({ entries, currentUrl = 'https://
     return () => {
       isMounted = false;
     };
-  }, [mermaidCode, uniqueId]);
+  }, [mermaidCode]);
 
   const handleCopyCode = () => {
     navigator.clipboard.writeText(mermaidCode);

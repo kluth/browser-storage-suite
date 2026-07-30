@@ -23,8 +23,25 @@ export default function App() {
   const [currentUrl, setCurrentUrl] = useState<string>('');
   const [currentTitle, setCurrentTitle] = useState<string>('');
   const [searchQuery, setSearchQuery] = useState<string>('');
-  const [items, setItems] = useState<{ key: string; value: string }[]>([]);
+  const [localItems, setLocalItems] = useState<{ key: string; value: string }[]>([]);
+  const [sessionItems, setSessionItems] = useState<{ key: string; value: string }[]>([]);
   const [cookies, setCookies] = useState<{ name: string; value: string }[]>([]);
+
+  const items = useMemo(() => {
+    if (storageType === 'local') return localItems;
+    if (storageType === 'session') return sessionItems;
+    return cookies.map((c) => ({ key: c.name, value: c.value }));
+  }, [storageType, localItems, sessionItems, cookies]);
+
+  const allTopologyEntries = useMemo(
+    () => [
+      ...localItems.map((i) => ({ key: i.key, value: i.value, target: 'localStorage' as const })),
+      ...sessionItems.map((i) => ({ key: i.key, value: i.value, target: 'sessionStorage' as const })),
+      ...cookies.map((c) => ({ key: c.name, value: c.value, target: 'cookie' as const })),
+    ],
+    [localItems, sessionItems, cookies]
+  );
+
   const [toastMessage, setToastMessage] = useState<{ text: string; type: 'success' | 'error'; offerReload?: boolean } | null>(null);
 
   const showToast = (text: string, type: 'success' | 'error' = 'success', offerReload: boolean = false) => {
@@ -118,9 +135,11 @@ export default function App() {
             setPredictedPresets(predictionsRes.value);
           }
 
-          probeBackendEndpoint(new URL(active.url).origin).then((backend) => {
-            if (backend) setDiscoveredBackend(backend);
-          });
+          try {
+            probeBackendEndpoint(new URL(active.url).origin).then((backend) => {
+              if (backend) setDiscoveredBackend(backend);
+            });
+          } catch (e) {}
 
           getCookiesForTab(active.url).then((cList) => {
             const fetchedCookies = cList.map((c) => ({ name: c.name, value: c.value }));
@@ -128,40 +147,93 @@ export default function App() {
           });
 
           if (active.id) {
-            chrome.tabs.sendMessage(active.id, { type: 'GET_STORAGE_DATA' }, (response) => {
+            const tabId = active.id;
+            chrome.tabs.sendMessage(tabId, { type: 'GET_STORAGE_DATA' }, (response) => {
               if (!chrome.runtime.lastError && response) {
-                const data = storageType === 'local' ? response.localStorage : response.sessionStorage;
-                if (data) {
-                  const list = Object.entries(data).map(([key, value]) => ({ key, value: String(value) }));
-                  setItems(list);
-                  runPerfAnalysis(list, []);
-                } else {
-                  setItems([]);
-                }
+                const lList = response.localStorage
+                  ? Object.entries(response.localStorage).map(([key, value]) => ({ key, value: String(value) }))
+                  : [];
+                const sList = response.sessionStorage
+                  ? Object.entries(response.sessionStorage).map(([key, value]) => ({ key, value: String(value) }))
+                  : [];
+                setLocalItems(lList);
+                setSessionItems(sList);
+                runPerfAnalysis([...lList, ...sList], []);
+                setLoading(false);
               } else {
-                setItems([]);
+                if (chrome.scripting) {
+                  chrome.scripting
+                    .executeScript({
+                      target: { tabId },
+                      func: () => {
+                        const localData: Record<string, string> = {};
+                        const sessionData: Record<string, string> = {};
+                        try {
+                          for (let i = 0; i < localStorage.length; i++) {
+                            const k = localStorage.key(i);
+                            if (k) localData[k] = localStorage.getItem(k) || '';
+                          }
+                        } catch (e) {}
+                        try {
+                          for (let i = 0; i < sessionStorage.length; i++) {
+                            const k = sessionStorage.key(i);
+                            if (k) sessionData[k] = sessionStorage.getItem(k) || '';
+                          }
+                        } catch (e) {}
+                        return { localStorage: localData, sessionStorage: sessionData };
+                      },
+                    })
+                    .then((results) => {
+                      const res = results[0]?.result;
+                      if (res) {
+                        const lList = res.localStorage
+                          ? Object.entries(res.localStorage).map(([key, value]) => ({ key, value: String(value) }))
+                          : [];
+                        const sList = res.sessionStorage
+                          ? Object.entries(res.sessionStorage).map(([key, value]) => ({ key, value: String(value) }))
+                          : [];
+                        setLocalItems(lList);
+                        setSessionItems(sList);
+                        runPerfAnalysis([...lList, ...sList], []);
+                      }
+                      setLoading(false);
+                    })
+                    .catch(() => {
+                      setLoading(false);
+                    });
+                } else {
+                  setLoading(false);
+                }
               }
-              setTimeout(() => setLoading(false), 300);
             });
           } else {
-            setItems([]);
-            setTimeout(() => setLoading(false), 300);
+            setLoading(false);
           }
         } else {
           setCurrentUrl('https://example.com');
-          setItems([]);
-          setTimeout(() => setLoading(false), 300);
+          setLoading(false);
         }
       });
     } else {
       setCurrentUrl('https://localhost:3000');
-      const fallbackList = [
+      const fallbackLocal = [
         { key: 'session_token', value: 'bearer_xyz_9981' },
         { key: 'ui_theme', value: 'dark' },
+        { key: 'cart_items', value: '[{"id":1,"qty":2}]' },
       ];
-      setItems(fallbackList);
-      runPerfAnalysis(fallbackList, []);
-      setTimeout(() => setLoading(false), 300);
+      const fallbackSession = [
+        { key: 'tab_state', value: 'active' },
+        { key: 'scroll_pos', value: '1420' },
+      ];
+      const fallbackCookies = [
+        { name: 'PREF', value: 'f6=40000000' },
+        { name: 'VISITOR_INFO1_LIVE', value: 'abc_xyz_771' },
+      ];
+      setLocalItems(fallbackLocal);
+      setSessionItems(fallbackSession);
+      setCookies(fallbackCookies);
+      runPerfAnalysis([...fallbackLocal, ...fallbackSession], fallbackCookies);
+      setLoading(false);
     }
   };
 
@@ -375,7 +447,7 @@ export default function App() {
 
   useEffect(() => {
     fetchStorageData();
-  }, [storageType]);
+  }, [storageType, activeTab]);
 
   const handleExecuteSql = () => {
     const startTime = performance.now();
@@ -1089,10 +1161,7 @@ console.log('LocalStorage State:', data);`;
             >
               <MermaidTopologyDiagram
                 currentUrl={currentUrl}
-                entries={[
-                  ...items.map((i) => ({ key: i.key, value: i.value, target: (storageType === 'local' ? 'localStorage' : 'sessionStorage') as any })),
-                  ...cookies.map((c) => ({ key: c.name, value: c.value, target: 'cookie' as any })),
-                ]}
+                entries={allTopologyEntries}
               />
             </Suspense>
           ) : (
@@ -1109,7 +1178,7 @@ console.log('LocalStorage State:', data);`;
                 }
               >
                 <SpatialGraphCanvas
-                  storageEntries={items.map((i) => ({ key: i.key, value: i.value, target: storageType === 'local' ? 'localStorage' : storageType === 'session' ? 'sessionStorage' : 'cookie' }))}
+                  storageEntries={allTopologyEntries}
                 />
               </Suspense>
             </>
