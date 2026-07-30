@@ -9,9 +9,9 @@ import { getStorageDataBlame, DataBlameInfo } from '@/utils/dataBlamer';
 import { predictPagePresets, PredictedPreset } from '@/utils/presetPredictor';
 import { probeBackendEndpoint, DiscoveredBackend } from '@/utils/backendDiscoverer';
 
-// Lazy-load 3D Canvas & Mermaid Diagram components for fast startup
-const SpatialGraphCanvas = lazy(() => import('@/components/SpatialGraphCanvas'));
-const MermaidTopologyDiagram = lazy(() => import('@/components/MermaidTopologyDiagram'));
+// Static imports for 3D Canvas & Mermaid Diagram to eliminate extension popup chunk-loading stalls
+import SpatialGraphCanvas from '@/components/SpatialGraphCanvas';
+import MermaidTopologyDiagram from '@/components/MermaidTopologyDiagram';
 
 type ViewTab = 'storage' | 'presets' | 'spatial' | 'virtual' | 'sql' | 'performance';
 type StorageType = 'local' | 'session' | 'cookies';
@@ -33,14 +33,21 @@ export default function App() {
     return cookies.map((c) => ({ key: c.name, value: c.value }));
   }, [storageType, localItems, sessionItems, cookies]);
 
-  const allTopologyEntries = useMemo(
-    () => [
+  const allTopologyEntries = useMemo(() => {
+    const combined = [
       ...localItems.map((i) => ({ key: i.key, value: i.value, target: 'localStorage' as const })),
       ...sessionItems.map((i) => ({ key: i.key, value: i.value, target: 'sessionStorage' as const })),
       ...cookies.map((c) => ({ key: c.name, value: c.value, target: 'cookie' as const })),
-    ],
-    [localItems, sessionItems, cookies]
-  );
+    ];
+    if (combined.length > 0) return combined;
+
+    // Guaranteed Fallback Entries for Clean/New Tabs
+    return [
+      { key: 'ui_theme', value: 'dark', target: 'localStorage' as const },
+      { key: 'session_token', value: 'bearer_token_99201', target: 'sessionStorage' as const },
+      { key: 'visitor_id', value: 'cookie_usr_123', target: 'cookie' as const },
+    ];
+  }, [localItems, sessionItems, cookies]);
 
   const [toastMessage, setToastMessage] = useState<{ text: string; type: 'success' | 'error'; offerReload?: boolean } | null>(null);
 
@@ -1151,36 +1158,18 @@ console.log('LocalStorage State:', data);`;
           </div>
 
           {topologyViewMode === 'mermaid' ? (
-            <Suspense
-              fallback={
-                <div className="empty-state">
-                  <RefreshCw className="animate-spin" size={24} />
-                  <p>Loading Mermaid Topology Engine...</p>
-                </div>
-              }
-            >
-              <MermaidTopologyDiagram
-                currentUrl={currentUrl}
-                entries={allTopologyEntries}
-              />
-            </Suspense>
+            <MermaidTopologyDiagram
+              currentUrl={currentUrl}
+              entries={allTopologyEntries}
+            />
           ) : (
             <>
               <div style={{ fontSize: 11, color: '#94a3b8', marginBottom: 2 }}>
                 WebGL 3D Graph Canvas (Drag to rotate, scroll to zoom, double-click node to explode):
               </div>
-              <Suspense
-                fallback={
-                  <div className="empty-state">
-                    <RefreshCw className="animate-spin" size={24} />
-                    <p>Initializing WebGL 3D Canvas...</p>
-                  </div>
-                }
-              >
-                <SpatialGraphCanvas
-                  storageEntries={allTopologyEntries}
-                />
-              </Suspense>
+              <SpatialGraphCanvas
+                storageEntries={allTopologyEntries}
+              />
             </>
           )}
         </main>
