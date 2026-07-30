@@ -12,6 +12,7 @@ import { probeBackendEndpoint, DiscoveredBackend } from '@/utils/backendDiscover
 // Static imports for 3D Canvas & Mermaid Diagram to eliminate extension popup chunk-loading stalls
 import SpatialGraphCanvas from '@/components/SpatialGraphCanvas';
 import MermaidTopologyDiagram from '@/components/MermaidTopologyDiagram';
+import ErrorBoundary from '@/components/ErrorBoundary';
 
 type ViewTab = 'storage' | 'presets' | 'spatial' | 'virtual' | 'sql' | 'performance';
 type StorageType = 'local' | 'session' | 'cookies';
@@ -1139,39 +1140,41 @@ console.log('LocalStorage State:', data);`;
       {/* Module 3: 3D Spatial Canvas & Mermaid Topology Diagram */}
       {activeTab === 'spatial' && (
         <main className="content-area" style={{ padding: 8, gap: 10 }}>
-          {/* Sub-tab view mode selector */}
-          <div style={{ display: 'flex', gap: 6, marginBottom: 4 }}>
-            <button
-              className={`tab-btn ${topologyViewMode === 'mermaid' ? 'active' : ''}`}
-              onClick={() => setTopologyViewMode('mermaid')}
-              style={{ flex: 1, padding: '4px 10px', fontSize: 11, display: 'flex', alignItems: 'center', justifyContent: 'center', gap: 6 }}
-            >
-              <Network size={14} /> ⭐ Mermaid Topology (Star, Hierarchy, Subgraph, Sequence)
-            </button>
-            <button
-              className={`tab-btn ${topologyViewMode === '3d' ? 'active' : ''}`}
-              onClick={() => setTopologyViewMode('3d')}
-              style={{ flex: 1, padding: '4px 10px', fontSize: 11, display: 'flex', alignItems: 'center', justifyContent: 'center', gap: 6 }}
-            >
-              <Box size={14} /> 🌐 3D Spatial WebGL Canvas
-            </button>
-          </div>
+          <ErrorBoundary fallbackTitle="Topologie Diagramm Render-Fehler">
+            {/* Sub-tab view mode selector */}
+            <div style={{ display: 'flex', gap: 6, marginBottom: 4 }}>
+              <button
+                className={`tab-btn ${topologyViewMode === 'mermaid' ? 'active' : ''}`}
+                onClick={() => setTopologyViewMode('mermaid')}
+                style={{ flex: 1, padding: '4px 10px', fontSize: 11, display: 'flex', alignItems: 'center', justifyContent: 'center', gap: 6 }}
+              >
+                <Network size={14} /> ⭐ Mermaid Topology (Star, Hierarchy, Subgraph, Sequence)
+              </button>
+              <button
+                className={`tab-btn ${topologyViewMode === '3d' ? 'active' : ''}`}
+                onClick={() => setTopologyViewMode('3d')}
+                style={{ flex: 1, padding: '4px 10px', fontSize: 11, display: 'flex', alignItems: 'center', justifyContent: 'center', gap: 6 }}
+              >
+                <Box size={14} /> 🌐 3D Spatial WebGL Canvas
+              </button>
+            </div>
 
-          {topologyViewMode === 'mermaid' ? (
-            <MermaidTopologyDiagram
-              currentUrl={currentUrl}
-              entries={allTopologyEntries}
-            />
-          ) : (
-            <>
-              <div style={{ fontSize: 11, color: '#94a3b8', marginBottom: 2 }}>
-                WebGL 3D Graph Canvas (Drag to rotate, scroll to zoom, double-click node to explode):
-              </div>
-              <SpatialGraphCanvas
-                storageEntries={allTopologyEntries}
+            {topologyViewMode === 'mermaid' ? (
+              <MermaidTopologyDiagram
+                currentUrl={currentUrl}
+                entries={allTopologyEntries}
               />
-            </>
-          )}
+            ) : (
+              <>
+                <div style={{ fontSize: 11, color: '#94a3b8', marginBottom: 2 }}>
+                  WebGL 3D Graph Canvas (Drag to rotate, scroll to zoom, double-click node to explode):
+                </div>
+                <SpatialGraphCanvas
+                  storageEntries={allTopologyEntries}
+                />
+              </>
+            )}
+          </ErrorBoundary>
         </main>
       )}
 
