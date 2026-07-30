@@ -785,7 +785,7 @@ console.log('LocalStorage State:', data);`;
         <button className="action-btn" title="Refresh" onClick={fetchStorageData}>
           <RefreshCw size={14} /> Refresh
         </button>
-        <span style={{ fontSize: 11, color: '#64748b' }}>Browser Storage Suite v1.0</span>
+        <span style={{ fontSize: 11, color: '#64748b' }}>Browser Storage Suite v1.1.0</span>
       </footer>
     </>
   );
