@@ -1,4 +1,4 @@
-import React, { useEffect, useRef, useState, useMemo } from 'react';
+import React, { useState, useMemo } from 'react';
 import { StorageTarget } from '../src/domain/model/valueObjects';
 import { Copy, Check, Download, Code, Network, GitBranch, Layers, Activity } from 'lucide-react';
 
@@ -28,7 +28,6 @@ export function generateMermaidCode(
 
   const cleanDomain = sanitize(domainName.replace(/^https?:\/\//, '')) || 'Active Page';
 
-  // Group entries by storage target
   const grouped: Record<string, StorageEntryItem[]> = {
     localStorage: [],
     sessionStorage: [],
@@ -145,11 +144,90 @@ export function renderNativeTopologySvg(
     { name: 'indexedDB', color: '#f59e0b', icon: '🗄️' },
   ];
 
-  const width = 680;
-  const height = 400;
+  const width = 640;
+  const height = 380;
   const cx = width / 2;
   const cy = height / 2;
 
+  if (layoutType === 'subgraph_cluster') {
+    return (
+      <svg width="100%" height={height} viewBox={`0 0 ${width} ${height}`} style={{ background: '#030712', borderRadius: 8 }}>
+        {engines.map((eng, idx) => {
+          const col = idx % 2;
+          const row = Math.floor(idx / 2);
+          const x = col * 300 + 20;
+          const y = row * 175 + 15;
+          const targetItems = entries.filter((e) => e.target.toLowerCase().includes(eng.name.toLowerCase()));
+
+          return (
+            <g key={eng.name} transform={`translate(${x}, ${y})`}>
+              <rect width="290" height="160" rx="8" fill="#090d16" stroke={eng.color} strokeWidth="1.5" />
+              <rect width="290" height="30" rx="8" fill="#1e293b" />
+              <text x="12" y="20" fill="#f8fafc" fontSize="11" fontWeight="bold">
+                {eng.icon} {eng.name.toUpperCase()} CLUSTER ({targetItems.length})
+              </text>
+
+              {targetItems.slice(0, 4).map((item, i) => (
+                <g key={i} transform={`translate(12, ${44 + i * 26})`}>
+                  <rect width="266" height="22" rx="4" fill="#030712" stroke="#334155" strokeWidth="1" />
+                  <text x="8" y="15" fill={eng.color} fontSize="10" fontFamily="monospace" fontWeight="600">
+                    🔑 {item.key.slice(0, 18)} : <tspan fill="#cbd5e1">{item.value.slice(0, 16)}</tspan>
+                  </text>
+                </g>
+              ))}
+
+              {targetItems.length > 4 && (
+                <text x="12" y="150" fill="#94a3b8" fontSize="10" italic="true">
+                  + {targetItems.length - 4} weitere Einträge...
+                </text>
+              )}
+            </g>
+          );
+        })}
+      </svg>
+    );
+  }
+
+  if (layoutType === 'sequence_flow') {
+    const steps = [
+      { from: '👤 User', to: '🌐 Web App', msg: 'User Click / Form Event', y: 70 },
+      { from: '🌐 Web App', to: '💾 Engines', msg: 'setItem() / setCookie()', y: 140 },
+      { from: '💾 Engines', to: '🛠️ Storage Suite', msg: 'Mutation Event / Intercept', y: 210 },
+      { from: '🛠️ Storage Suite', to: '👤 User', msg: 'Realtime Glow & Data Blame', y: 280 },
+    ];
+
+    return (
+      <svg width="100%" height={height} viewBox={`0 0 ${width} ${height}`} style={{ background: '#030712', borderRadius: 8 }}>
+        <line x1="80" y1="40" x2="80" y2="330" stroke="#334155" strokeDasharray="4 4" />
+        <line x1="240" y1="40" x2="240" y2="330" stroke="#334155" strokeDasharray="4 4" />
+        <line x1="400" y1="40" x2="400" y2="330" stroke="#334155" strokeDasharray="4 4" />
+        <line x1="560" y1="40" x2="560" y2="330" stroke="#334155" strokeDasharray="4 4" />
+
+        <rect x="30" y="10" width="100" height="28" rx="6" fill="#1e293b" stroke="#38bdf8" />
+        <text x="80" y="28" textAnchor="middle" fill="#f8fafc" fontSize="11" fontWeight="bold">👤 User</text>
+
+        <rect x="190" y="10" width="100" height="28" rx="6" fill="#1e293b" stroke="#a855f7" />
+        <text x="240" y="28" textAnchor="middle" fill="#f8fafc" fontSize="11" fontWeight="bold">🌐 Web App</text>
+
+        <rect x="350" y="10" width="100" height="28" rx="6" fill="#1e293b" stroke="#10b981" />
+        <text x="400" y="28" textAnchor="middle" fill="#f8fafc" fontSize="11" fontWeight="bold">💾 Engines</text>
+
+        <rect x="510" y="10" width="100" height="28" rx="6" fill="#1e293b" stroke="#f59e0b" />
+        <text x="560" y="28" textAnchor="middle" fill="#f8fafc" fontSize="11" fontWeight="bold">🛠️ Suite</text>
+
+        {steps.map((s, idx) => (
+          <g key={idx}>
+            <line x1="80" y1={s.y} x2="560" y2={s.y} stroke="#38bdf8" strokeWidth="1.5" strokeDasharray="2 2" />
+            <polygon points="556,276 564,280 556,284" fill="#38bdf8" />
+            <rect x="180" y={s.y - 12} width="280" height="20" rx="4" fill="#090d16" stroke="#334155" />
+            <text x="320" y={s.y + 2} textAnchor="middle" fill="#38bdf8" fontSize="10" fontWeight="600">{s.msg}</text>
+          </g>
+        ))}
+      </svg>
+    );
+  }
+
+  // Default Star & Hierarchy SVG View
   const enginePositions = [
     { x: cx - 180, y: cy - 90 },
     { x: cx + 180, y: cy - 90 },
@@ -210,50 +288,13 @@ export function renderNativeTopologySvg(
 }
 
 export default function MermaidTopologyDiagram({ entries, currentUrl = 'https://example.com' }: MermaidTopologyDiagramProps) {
-  const containerRef = useRef<HTMLDivElement>(null);
-
   const [layoutType, setLayoutType] = useState<DiagramLayoutType>('star');
-  const [svgContent, setSvgContent] = useState<string>('');
-  const [renderError, setRenderError] = useState<string | null>(null);
   const [showCode, setShowCode] = useState<boolean>(false);
   const [copied, setCopied] = useState<boolean>(false);
 
   const mermaidCode = useMemo(() => {
     return generateMermaidCode(entries, layoutType, currentUrl);
   }, [entries, layoutType, currentUrl]);
-
-  useEffect(() => {
-    let isMounted = true;
-    const renderId = `mermaid_svg_${Math.random().toString(36).substring(2, 9)}`;
-
-    import('mermaid')
-      .then((m) => {
-        const mermaidInstance = m.default || m;
-        mermaidInstance.initialize({
-          startOnLoad: false,
-          theme: 'dark',
-          securityLevel: 'loose',
-          fontFamily: 'monospace',
-        });
-        return mermaidInstance.render(renderId, mermaidCode);
-      })
-      .then(({ svg }) => {
-        if (isMounted && svg && svg.length > 50) {
-          setSvgContent(svg);
-          setRenderError(null);
-        }
-      })
-      .catch((err) => {
-        if (isMounted) {
-          console.warn('Mermaid render warning:', err);
-          setRenderError(String(err?.message || err));
-        }
-      });
-
-    return () => {
-      isMounted = false;
-    };
-  }, [mermaidCode]);
 
   const handleCopyCode = () => {
     navigator.clipboard.writeText(mermaidCode);
@@ -262,8 +303,10 @@ export default function MermaidTopologyDiagram({ entries, currentUrl = 'https://
   };
 
   const handleDownloadSvg = () => {
-    if (!svgContent) return;
-    const blob = new Blob([svgContent], { type: 'image/svg+xml' });
+    const svgElement = document.getElementById('native_topology_svg_container');
+    if (!svgElement) return;
+    const svgString = new XMLSerializer().serializeToString(svgElement);
+    const blob = new Blob([svgString], { type: 'image/svg+xml' });
     const url = URL.createObjectURL(blob);
     const a = document.createElement('a');
     a.href = url;
@@ -361,7 +404,7 @@ export default function MermaidTopologyDiagram({ entries, currentUrl = 'https://
         </div>
       </div>
 
-      {/* Main View Area: Rendered SVG vs Code View vs Fallback */}
+      {/* Main View Area */}
       {showCode ? (
         <div style={{ position: 'relative' }}>
           <pre
@@ -383,7 +426,7 @@ export default function MermaidTopologyDiagram({ entries, currentUrl = 'https://
         </div>
       ) : (
         <div
-          ref={containerRef}
+          id="native_topology_svg_container"
           style={{
             minHeight: 320,
             maxHeight: 520,
@@ -397,14 +440,7 @@ export default function MermaidTopologyDiagram({ entries, currentUrl = 'https://
             justifyContent: 'center',
           }}
         >
-          {svgContent && svgContent.length > 50 ? (
-            <div
-              dangerouslySetInnerHTML={{ __html: svgContent }}
-              style={{ width: '100%', display: 'flex', justifyContent: 'center' }}
-            />
-          ) : (
-            renderNativeTopologySvg(entries, layoutType, currentUrl)
-          )}
+          {renderNativeTopologySvg(entries, layoutType, currentUrl)}
         </div>
       )}
     </div>
