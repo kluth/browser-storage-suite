@@ -1,0 +1,160 @@
+name: CI/CD Build, Release & Store Auto-Publish Pipeline
+
+on:
+  push:
+    branches:
+      - main
+    tags:
+      - 'v*.*.*'
+  workflow_dispatch:
+    inputs:
+      publish_stores:
+        description: 'Publish automatically to Chrome Web Store and Firefox AMO'
+        required: true
+        type: boolean
+        default: true
+
+jobs:
+  # ---------------------------------------------------------------
+  # 1. Quality Gate: TypeCheck & Vitest Test Suite
+  # ---------------------------------------------------------------
+  test-and-quality:
+    name: 🧪 Quality Gate (Compile & Vitest)
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout Repository
+        uses: actions/checkout@v4
+
+      - name: Setup Node.js 20
+        uses: actions/setup-node@v4
+        with:
+          node-version: 20
+          cache: 'npm'
+
+      - name: Install Dependencies
+        run: npm ci
+
+      - name: TypeScript TypeCheck
+        run: npm run compile
+
+      - name: Execute Vitest Suite
+        run: npm test
+
+  # ---------------------------------------------------------------
+  # 2. Build & Zip Chrome MV3 & Firefox MV2 Bundles
+  # ---------------------------------------------------------------
+  build-and-pack:
+    name: 📦 Build & Package Extension Zips
+    needs: test-and-quality
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout Repository
+        uses: actions/checkout@v4
+
+      - name: Setup Node.js 20
+        uses: actions/setup-node@v4
+        with:
+          node-version: 20
+          cache: 'npm'
+
+      - name: Install Dependencies
+        run: npm ci
+
+      - name: Build & Zip Chrome Extension (MV3)
+        run: npm run zip
+
+      - name: Build & Zip Firefox Extension (MV2)
+        run: npm run zip:firefox
+
+      - name: Upload Chrome Zip Artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: chrome-extension-zip
+          path: .output/*.zip
+
+  # ---------------------------------------------------------------
+  # 3. Create GitHub Release on Tag / Dispatch
+  # ---------------------------------------------------------------
+  github-release:
+    name: 🚀 Create GitHub Release
+    needs: build-and-pack
+    if: startsWith(github.ref, 'refs/tags/v') || github.event.inputs.publish_stores == 'true'
+    runs-on: ubuntu-latest
+    permissions:
+      contents: write
+    steps:
+      - name: Checkout Repository
+        uses: actions/checkout@v4
+
+      - name: Download Build Artifacts
+        uses: actions/download-artifact@v4
+        with:
+          name: chrome-extension-zip
+          path: ./dist-release
+
+      - name: Create GitHub Release & Upload Assets
+        uses: softprops/action-gh-release@v2
+        with:
+          files: ./dist-release/*.zip
+          generate_release_notes: true
+          draft: false
+          prerelease: false
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+
+  # ---------------------------------------------------------------
+  # 4. Auto-Publish to Chrome Web Store
+  # ---------------------------------------------------------------
+  publish-chrome:
+    name: 🛒 Publish to Chrome Web Store
+    needs: build-and-pack
+    if: (startsWith(github.ref, 'refs/tags/v') || github.event.inputs.publish_stores == 'true') && secrets.CHROME_CLIENT_ID != ''
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout Repository
+        uses: actions/checkout@v4
+
+      - name: Setup Node.js 20
+        uses: actions/setup-node@v4
+        with:
+          node-version: 20
+          cache: 'npm'
+
+      - name: Install Dependencies
+        run: npm ci
+
+      - name: Build & Submit to Chrome Web Store via WXT
+        run: npx wxt submit
+        env:
+          CHROME_EXTENSION_ID: ${{ secrets.CHROME_EXTENSION_ID }}
+          CHROME_CLIENT_ID: ${{ secrets.CHROME_CLIENT_ID }}
+          CHROME_CLIENT_SECRET: ${{ secrets.CHROME_CLIENT_SECRET }}
+          CHROME_REFRESH_TOKEN: ${{ secrets.CHROME_REFRESH_TOKEN }}
+
+  # ---------------------------------------------------------------
+  # 5. Auto-Publish to Firefox Add-ons Store (AMO)
+  # ---------------------------------------------------------------
+  publish-firefox:
+    name: 🦊 Publish to Firefox Add-ons (AMO)
+    needs: build-and-pack
+    if: (startsWith(github.ref, 'refs/tags/v') || github.event.inputs.publish_stores == 'true') && secrets.FIREFOX_JWT_ISSUER != ''
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout Repository
+        uses: actions/checkout@v4
+
+      - name: Setup Node.js 20
+        uses: actions/setup-node@v4
+        with:
+          node-version: 20
+          cache: 'npm'
+
+      - name: Install Dependencies
+        run: npm ci
+
+      - name: Build & Submit to Firefox AMO via WXT
+        run: npx wxt submit -b firefox
+        env:
+          FIREFOX_EXTENSION_ID: ${{ secrets.FIREFOX_EXTENSION_ID }}
+          FIREFOX_JWT_ISSUER: ${{ secrets.FIREFOX_JWT_ISSUER }}
+          FIREFOX_JWT_SECRET: ${{ secrets.FIREFOX_JWT_SECRET }}
