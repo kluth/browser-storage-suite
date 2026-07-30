@@ -1,4 +1,4 @@
-import React, { useEffect, useRef, useState, useId, useMemo } from 'react';
+import React, { useEffect, useRef, useState, useMemo } from 'react';
 import { StorageTarget } from '../src/domain/model/valueObjects';
 import { Copy, Check, Download, Code, Network, GitBranch, Layers, Activity } from 'lucide-react';
 
@@ -131,8 +131,85 @@ export function generateMermaidCode(
   return code;
 }
 
+export function renderNativeTopologySvg(
+  entries: StorageEntryItem[],
+  layoutType: DiagramLayoutType,
+  domainName: string = 'Active Page'
+): React.ReactNode {
+  const cleanDomain = domainName.replace(/^https?:\/\//, '') || 'Active Page';
+  
+  const engines = [
+    { name: 'localStorage', color: '#38bdf8', icon: '💾' },
+    { name: 'sessionStorage', color: '#a855f7', icon: '⏱️' },
+    { name: 'cookie', color: '#10b981', icon: '🍪' },
+    { name: 'indexedDB', color: '#f59e0b', icon: '🗄️' },
+  ];
+
+  const width = 680;
+  const height = 400;
+  const cx = width / 2;
+  const cy = height / 2;
+
+  const enginePositions = [
+    { x: cx - 180, y: cy - 90 },
+    { x: cx + 180, y: cy - 90 },
+    { x: cx - 180, y: cy + 90 },
+    { x: cx + 180, y: cy + 90 },
+  ];
+
+  return (
+    <svg width="100%" height={height} viewBox={`0 0 ${width} ${height}`} style={{ background: '#030712', borderRadius: 8 }}>
+      <defs>
+        <filter id="glow" x="-20%" y="-20%" width="140%" height="140%">
+          <feGaussianBlur stdDeviation="3" result="blur" />
+          <feComposite in="SourceGraphic" in2="blur" operator="over" />
+        </filter>
+      </defs>
+
+      {/* Central Connecting Lines */}
+      {enginePositions.map((pos, idx) => (
+        <line
+          key={`line_${idx}`}
+          x1={cx}
+          y1={cy}
+          x2={pos.x}
+          y2={pos.y}
+          stroke={engines[idx].color}
+          strokeWidth="2"
+          strokeDasharray="4 4"
+          opacity="0.7"
+        />
+      ))}
+
+      {/* Center Root Node */}
+      <g transform={`translate(${cx}, ${cy})`}>
+        <circle r="36" fill="#0284c7" stroke="#38bdf8" strokeWidth="3" filter="url(#glow)" />
+        <text y="-4" textAnchor="middle" fill="#ffffff" fontSize="12" fontWeight="bold">🌐 Active Hub</text>
+        <text y="14" textAnchor="middle" fill="#94a3b8" fontSize="10">{cleanDomain.slice(0, 20)}</text>
+      </g>
+
+      {/* Engine Nodes & Entries */}
+      {engines.map((eng, idx) => {
+        const pos = enginePositions[idx];
+        const count = entries.filter((e) => e.target.toLowerCase().includes(eng.name.toLowerCase())).length;
+
+        return (
+          <g key={eng.name} transform={`translate(${pos.x}, ${pos.y})`}>
+            <rect x="-70" y="-24" width="140" height="48" rx="8" fill="#1e293b" stroke={eng.color} strokeWidth="2" filter="url(#glow)" />
+            <text y="-4" textAnchor="middle" fill="#f8fafc" fontSize="11" fontWeight="bold">
+              {eng.icon} {eng.name}
+            </text>
+            <text y="12" textAnchor="middle" fill={eng.color} fontSize="10" fontWeight="600">
+              {count} {count === 1 ? 'Eintrag' : 'Einträge'}
+            </text>
+          </g>
+        );
+      })}
+    </svg>
+  );
+}
+
 export default function MermaidTopologyDiagram({ entries, currentUrl = 'https://example.com' }: MermaidTopologyDiagramProps) {
-  const uniqueId = useId().replace(/:/g, '');
   const containerRef = useRef<HTMLDivElement>(null);
 
   const [layoutType, setLayoutType] = useState<DiagramLayoutType>('star');
@@ -161,14 +238,14 @@ export default function MermaidTopologyDiagram({ entries, currentUrl = 'https://
         return mermaidInstance.render(renderId, mermaidCode);
       })
       .then(({ svg }) => {
-        if (isMounted) {
+        if (isMounted && svg && svg.length > 50) {
           setSvgContent(svg);
           setRenderError(null);
         }
       })
       .catch((err) => {
         if (isMounted) {
-          console.error('Mermaid render error:', err);
+          console.warn('Mermaid render warning:', err);
           setRenderError(String(err?.message || err));
         }
       });
@@ -284,7 +361,7 @@ export default function MermaidTopologyDiagram({ entries, currentUrl = 'https://
         </div>
       </div>
 
-      {/* Main View Area: Rendered SVG vs Code View */}
+      {/* Main View Area: Rendered SVG vs Code View vs Fallback */}
       {showCode ? (
         <div style={{ position: 'relative' }}>
           <pre
@@ -320,15 +397,13 @@ export default function MermaidTopologyDiagram({ entries, currentUrl = 'https://
             justifyContent: 'center',
           }}
         >
-          {renderError ? (
-            <div style={{ color: '#ef4444', fontSize: 11, textAlign: 'center', padding: 20 }}>
-              ⚠️ Fehler beim Rendern des Mermaid-Diagramms: {renderError}
-            </div>
-          ) : (
+          {svgContent && svgContent.length > 50 ? (
             <div
               dangerouslySetInnerHTML={{ __html: svgContent }}
               style={{ width: '100%', display: 'flex', justifyContent: 'center' }}
             />
+          ) : (
+            renderNativeTopologySvg(entries, layoutType, currentUrl)
           )}
         </div>
       )}

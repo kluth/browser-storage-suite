@@ -276,33 +276,76 @@ export default function SpatialGraphCanvas({
 
   if (!webglSupported || workerError !== null) {
     return (
-      <div style={{ width: '100%', height: '400px', borderRadius: '8px', background: '#090d16', padding: 16, color: '#94a3b8' }}>
-        <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 8 }}>
-          <div style={{ fontSize: 13, fontWeight: 700, color: '#38bdf8' }}>
-            3D Graph Topology (2D View{workerError ? ' - Fallback' : ''}):
+      <div style={{ width: '100%', height: '400px', borderRadius: '8px', background: '#090d16', padding: 12, color: '#94a3b8', position: 'relative', border: '1px solid #1e293b' }}>
+        <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 6 }}>
+          <div style={{ fontSize: 12, fontWeight: 700, color: '#38bdf8' }}>
+            🌐 2D Spatial Canvas Topology ({explodedNodeId ? 'Exploded View' : 'Root Overview'})
           </div>
           {explodedNodeId && (
-            <button className="action-btn" onClick={handleResetView} style={{ fontSize: 10, color: '#38bdf8' }}>
-              ⬅ Zurück zur Übersicht
+            <button className="action-btn" onClick={handleResetView} style={{ fontSize: 10, color: '#10b981', padding: '2px 8px' }}>
+              ⬅ Gesamtansicht Zurücksetzen
             </button>
           )}
         </div>
-        {workerError && (
-          <div style={{ fontSize: 11, color: '#ef4444', marginBottom: 8 }}>
-            Error: {workerError}
+
+        <svg width="100%" height="340" viewBox="0 0 600 340" style={{ background: '#030712', borderRadius: 8 }}>
+          <defs>
+            <filter id="nodeGlow" x="-20%" y="-20%" width="140%" height="140%">
+              <feGaussianBlur stdDeviation="3" result="blur" />
+              <feComposite in="SourceGraphic" in2="blur" operator="over" />
+            </filter>
+          </defs>
+
+          {/* Render 2D Link Lines */}
+          {renderedLinks.map((l) => (
+            <line
+              key={l.id}
+              x1={300 + l.source[0] * 18}
+              y1={170 + l.source[1] * 18}
+              x2={300 + l.target[0] * 18}
+              y2={170 + l.target[1] * 18}
+              stroke="#38bdf8"
+              strokeWidth="2"
+              strokeDasharray="3 3"
+              opacity="0.6"
+            />
+          ))}
+
+          {/* Render 2D Nodes */}
+          {renderedNodes.map((n, i) => {
+            const nx = 300 + n.position[0] * 18;
+            const ny = 170 + n.position[1] * 18;
+            return (
+              <g
+                key={n.id}
+                transform={`translate(${nx}, ${ny})`}
+                onClick={() => {
+                  onNodeClick?.(n.id);
+                  setSelectedChildNode(effectiveNodes.find((node) => node.id === n.id) || null);
+                }}
+                onDoubleClick={() => handleNodeDoubleClick(n.id)}
+                style={{ cursor: 'pointer' }}
+              >
+                <circle r="18" fill="#1e293b" stroke={n.color} strokeWidth="3" filter="url(#nodeGlow)" />
+                <text y="32" textAnchor="middle" fill="#f8fafc" fontSize="10" fontWeight="600">
+                  {n.label}
+                </text>
+              </g>
+            );
+          })}
+        </svg>
+
+        {/* Selected Node Drawer */}
+        {selectedChildNode && (
+          <div style={{ position: 'absolute', bottom: 16, left: 16, right: 16, background: 'rgba(9, 13, 22, 0.95)', border: '1px solid #38bdf8', padding: '6px 10px', borderRadius: 6, fontSize: 11, color: '#f8fafc' }}>
+            <div style={{ fontWeight: 700, color: getNodeColor(selectedChildNode.type) }}>
+              {selectedChildNode.label} ({selectedChildNode.type.toUpperCase()})
+            </div>
+            <div style={{ color: '#94a3b8', fontSize: 10 }}>
+              Doppelklick zum Explodieren der echten Inhalte
+            </div>
           </div>
         )}
-        {renderedNodes.map((n) => (
-          <div
-            key={n.id}
-            onClick={() => onNodeClick?.(n.id)}
-            onDoubleClick={() => handleNodeDoubleClick(n.id)}
-            style={{ fontSize: 11, color: n.color, marginBottom: 4, fontFamily: 'monospace', cursor: 'pointer' }}
-            title="Doppelklick zum Explodieren der Inhalte"
-          >
-            ● {n.label} (x: {n.position[0].toFixed(1)}, y: {n.position[1].toFixed(1)}, z: {n.position[2].toFixed(1)})
-          </div>
-        ))}
       </div>
     );
   }
