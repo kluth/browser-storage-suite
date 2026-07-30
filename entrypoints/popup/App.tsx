@@ -1,5 +1,5 @@
 import React, { useState, useEffect, lazy, Suspense } from 'react';
-import { Database, Cookie, HardDrive, Trash2, RefreshCw, Box, Table, Search, Terminal, Settings as SettingsIcon, Zap, AlertTriangle, CheckCircle, Info, Code, FileText, ChevronDown, ChevronRight, UserCheck, Clock, GitCommit, Bookmark, Play, ExternalLink, Loader2, Sparkles, Server, PlusCircle, Copy, Check, Bot, Globe } from 'lucide-react';
+import { Database, Cookie, HardDrive, Trash2, RefreshCw, Box, Table, Search, Terminal, Settings as SettingsIcon, Zap, AlertTriangle, CheckCircle, Info, Code, FileText, ChevronDown, ChevronRight, UserCheck, Clock, GitCommit, Bookmark, Play, ExternalLink, Loader2, Sparkles, Server, PlusCircle, Copy, Check, Bot, Globe, Network } from 'lucide-react';
 import { getCookiesForTab, deleteCookie } from '@/utils/browserApi';
 import VirtualizedDataGrid, { GridRow } from '@/components/VirtualizedDataGrid';
 import { generateSelectiveSeedData, SeedTemplate } from '@/utils/dataSeeder';
