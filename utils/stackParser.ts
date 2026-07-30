@@ -128,16 +128,25 @@ const INTERNAL_URL_PATTERNS = [
   'vitest',
   'node:internal',
   'node:events',
+  'wxt/sandbox',
+  'wxt',
 ];
 
 const INTERNAL_FUNC_PATTERNS = [
   'datablameregistry',
   'storageinterceptoradapter',
+  'proxysetitem',
+  'proxyremoveitem',
+  'proxyclear',
+  'interceptorsetitem',
+  'interceptorremoveitem',
+  'interceptorclear',
 ];
 
 const INTERNAL_RAW_PATTERNS = [
   'vitest/dist',
   'node:internal',
+  'storageinterceptoradapter',
 ];
 
 export function isInternalFrame(frame: StackFrame): boolean {

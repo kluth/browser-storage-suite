@@ -51,7 +51,7 @@ function extractFilename(url: string): string {
   }
 }
 
-const EXTENSION_PATTERNS = ['chrome-extension://', 'moz-extension://', 'extension'];
+const EXTENSION_PATTERNS = ['chrome-extension://', 'moz-extension://', 'safari-extension://'];
 const ANALYTICS_PATTERNS = ['analytics', 'gtag', 'pixel'];
 const USER_ACTION_FUNC_PATTERNS = [
   'onclick',
