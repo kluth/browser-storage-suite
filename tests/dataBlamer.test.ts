@@ -96,4 +96,73 @@ handleLogin@https://example.com/login.ts:45:3`;
     expect(blame.actor.lineNumber).toBe(284);
     expect(blame.actor.columnNumber).toBe(12);
   });
+  it('should classify analytics actors from URL or function names', () => {
+    const gtagStack = `Error\n    at trackEvent (https://google-analytics.com/gtag.js:10:5)`;
+    const blameGtag = getStorageDataBlame('gtag_key', 'val', gtagStack);
+    expect(blameGtag.actor.type).toBe('analytics');
+    expect(blameGtag.actor.name).toContain('Analytics');
+
+    const funcAnalyticsStack = `Error\n    at sendAnalyticsData (https://example.com/app.js:20:5)`;
+    const blameFunc = getStorageDataBlame('analytics_key', 'val', funcAnalyticsStack);
+    expect(blameFunc.actor.type).toBe('analytics');
+    expect(blameFunc.actor.name).toContain('Analytics');
+  });
+
+  it('should classify moz-extension and safari-extension actors', () => {
+    const mozStack = `Error\n    at bg (moz-extension://12345/bg.js:1:1)`;
+    const blameMoz = getStorageDataBlame('moz_key', 'val', mozStack);
+    expect(blameMoz.actor.type).toBe('extension');
+
+    const safariStack = `Error\n    at bg (safari-extension://67890/bg.js:1:1)`;
+    const blameSafari = getStorageDataBlame('safari_key', 'val', safariStack);
+    expect(blameSafari.actor.type).toBe('extension');
+  });
+
+  it('should classify user actions for submit, toggle, eventlistener, and anonymous click', () => {
+    const submitStack = `Error\n    at handleSubmit (https://example.com/form.js:10:2)`;
+    const blameSubmit = getStorageDataBlame('form_key', 'val', submitStack);
+    expect(blameSubmit.actor.type).toBe('user_action');
+
+    const anonClickStack = `Error\n    at anonymous (https://example.com/button-handler.js:5:1)`;
+    const blameAnonClick = getStorageDataBlame('anon_click_key', 'val', anonClickStack);
+    expect(blameAnonClick.actor.name).toBe('Script (button-handler.js)');
+
+    const userClickStack = `Error\n    at userClick (https://example.com/btn.js:5:1)`;
+    const blameUserClick = getStorageDataBlame('user_click_key', 'val', userClickStack);
+    expect(blameUserClick.actor.type).toBe('user_action');
+  });
+
+  it('should track conflict overwrites when different actors mutate the same key', () => {
+    const registry = DataBlameRegistry.getInstance();
+    const actorA = `Error\n    at setAuthToken (https://example.com/auth.js:10:5)`;
+    const actorB = `Error\n    at injectScript (chrome-extension://1234/content.js:5:2)`;
+
+    registry.recordMutation('shared_key', 'value_a', actorA);
+    registry.recordMutation('shared_key', 'value_b', actorB);
+
+    const blameRes = getStorageDataBlameResult('shared_key', 'value_b', actorB);
+    expect(blameRes.ok).toBe(true);
+    if (blameRes.ok) {
+      expect(blameRes.value.hasConflictOverwrite).toBe(true);
+      expect(blameRes.value.historyTimeline[0].isConflictOverwrite).toBe(true);
+      expect(blameRes.value.historyTimeline[0].overwrittenActorName).toContain('setAuthToken');
+    }
+  });
+
+  it('should strip query parameters and hash fragments from filenames', () => {
+    const queryStack = `Error\n    at doUpdate (https://example.com/static/main.bundle.js?v=1.2.3#L50:10:5)`;
+    const blame = getStorageDataBlame('query_key', 'val', queryStack);
+    expect(blame.actor.name).toContain('main.bundle.js');
+  });
+
+  it('should cap mutation history timeline at 50 entries', () => {
+    const registry = DataBlameRegistry.getInstance();
+    for (let i = 0; i < 60; i++) {
+      registry.recordMutation('capped_key', `val_${i}`);
+    }
+
+    const blame = getStorageDataBlame('capped_key', 'val_59');
+    expect(blame.revisionCount).toBe(60);
+    expect(blame.historyTimeline.length).toBe(50);
+  });
 });

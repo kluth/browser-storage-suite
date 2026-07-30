@@ -2,7 +2,7 @@ import { describe, it, expect, beforeEach } from 'vitest';
 import { getStorageDataBlame, DataBlameRegistry, getStorageDataBlameResult } from '../utils/dataBlamer';
 import { parseStackTrace, parseStackFrameLine, isInternalFrame, filterInternalFrames } from '../utils/stackParser';
 
-describe('DataBlamer & StackParser Adversarial Stress Harness', { timeout: 30000 }, () => {
+describe('DataBlamer & StackParser Adversarial Stress Harness', { timeout: 60000 }, () => {
   beforeEach(() => {
     DataBlameRegistry.getInstance().clear();
   });

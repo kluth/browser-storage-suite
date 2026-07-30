@@ -69,20 +69,64 @@ describe('Dynamic Smart Page Structure Preset Predictor Engine', () => {
     expect(predictions.some((p) => p.category === 'saas')).toBe(true);
   });
 
-  it('should handle edge cases and empty metadata safely returning Result', () => {
-    const invalidMeta: PageMetadata = {
-      url: '',
-      title: '',
-      hasPasswordField: false,
-      hasFormCart: false,
-      metaTags: [],
-    };
-
-    const result = predictPagePresets(invalidMeta);
-    expect(result.ok).toBe(true);
-    if (result.ok) {
-      expect(result.value.length).toBeGreaterThan(0);
+  it('should trigger e-commerce predictions for all keyword variants', () => {
+    const urls = ['https://test.com/checkout', 'https://test.com/shop', 'https://test.com/store'];
+    for (const url of urls) {
+      const res = predictPagePresets({ url, title: '', hasPasswordField: false, hasFormCart: false, metaTags: [] });
+      expect(res.ok).toBe(true);
+      if (res.ok) {
+        expect(res.value.some((p) => p.category === 'ecommerce')).toBe(true);
+      }
     }
+
+    const titles = ['My Online Store', 'Awesome Shop Front'];
+    for (const title of titles) {
+      const res = predictPagePresets({ url: 'https://test.com', title, hasPasswordField: false, hasFormCart: false, metaTags: [] });
+      expect(res.ok).toBe(true);
+      if (res.ok) {
+        expect(res.value.some((p) => p.category === 'ecommerce')).toBe(true);
+      }
+    }
+
+    const metaTags = [['e-commerce'], ['shop']];
+    for (const tagArr of metaTags) {
+      const res = predictPagePresets({ url: 'https://test.com', title: '', hasPasswordField: false, hasFormCart: false, metaTags: tagArr });
+      expect(res.ok).toBe(true);
+      if (res.ok) {
+        expect(res.value.some((p) => p.category === 'ecommerce')).toBe(true);
+      }
+    }
+  });
+
+  it('should trigger auth predictions for all keyword variants', () => {
+    const urls = ['https://test.com/auth', 'https://test.com/dashboard', 'https://test.com/account'];
+    for (const url of urls) {
+      const res = predictPagePresets({ url, title: '', hasPasswordField: false, hasFormCart: false, metaTags: [] });
+      expect(res.ok).toBe(true);
+      if (res.ok) {
+        expect(res.value.some((p) => p.category === 'auth')).toBe(true);
+      }
+    }
+
+    const titles = ['User Dashboard Auth', 'Login Portal'];
+    for (const title of titles) {
+      const res = predictPagePresets({ url: 'https://test.com', title, hasPasswordField: false, hasFormCart: false, metaTags: [] });
+      expect(res.ok).toBe(true);
+      if (res.ok) {
+        expect(res.value.some((p) => p.category === 'auth')).toBe(true);
+      }
+    }
+  });
+
+  it('should handle invalid URL string and null metadata gracefully', () => {
+    const invalidUrlRes = predictPagePresets({ url: 'not-a-valid-url!@#$', title: '', hasPasswordField: false, hasFormCart: false, metaTags: [] });
+    expect(invalidUrlRes.ok).toBe(true);
+
+    const nullMetaRes = predictPagePresets(null as any);
+    expect(nullMetaRes.ok).toBe(true);
+
+    const undefinedMetaRes = predictPagePresets(undefined as any);
+    expect(undefinedMetaRes.ok).toBe(true);
   });
 });
 

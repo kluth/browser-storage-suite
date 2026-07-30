@@ -59,29 +59,101 @@ describe('Dynamic Storage Preset & Testing State Switcher', () => {
     }
   });
 
-  it('should create custom presets with StorageKey/StorageValue validation', () => {
-    const valid = createPreset({
-      id: 'custom_preset_1',
-      name: 'Custom Session Preset',
-      description: 'Dynamic user session',
+  it('should validate preset id and name boundaries', () => {
+    const emptyId = createPreset({
+      id: '   ',
+      name: 'Valid Name',
+      description: 'Desc',
       target: 'localStorage',
-      rawEntries: { session_token: 'tok_abc123', theme: 'light' },
+      rawEntries: { a: 'b' },
     });
-    expect(valid.ok).toBe(true);
-    if (valid.ok) {
-      expect(valid.value.entries.session_token).toBe('tok_abc123');
+    expect(emptyId.ok).toBe(false);
+    if (!emptyId.ok) {
+      expect(emptyId.error.message).toBe('Preset id cannot be empty');
     }
 
-    const invalidKey = createPreset({
-      id: 'invalid_preset',
-      name: 'Bad Key Preset',
-      description: 'Empty key test',
+    const missingId = createPreset({
+      id: '',
+      name: 'Valid Name',
+      description: 'Desc',
       target: 'localStorage',
-      rawEntries: { '': 'invalid_empty_key' },
+      rawEntries: { a: 'b' },
     });
-    expect(invalidKey.ok).toBe(false);
-    if (!invalidKey.ok) {
-      expect(invalidKey.error.message).toContain('StorageKey');
+    expect(missingId.ok).toBe(false);
+    if (!missingId.ok) {
+      expect(missingId.error.message).toBe('Preset id cannot be empty');
+    }
+
+    const emptyName = createPreset({
+      id: 'p_123',
+      name: '  ',
+      description: 'Desc',
+      target: 'localStorage',
+      rawEntries: { a: 'b' },
+    });
+    expect(emptyName.ok).toBe(false);
+    if (!emptyName.ok) {
+      expect(emptyName.error.message).toBe('Preset name cannot be empty');
+    }
+
+    const missingName = createPreset({
+      id: 'p_123',
+      name: '',
+      description: 'Desc',
+      target: 'localStorage',
+      rawEntries: { a: 'b' },
+    });
+    expect(missingName.ok).toBe(false);
+    if (!missingName.ok) {
+      expect(missingName.error.message).toBe('Preset name cannot be empty');
+    }
+
+    const noDesc = createPreset({
+      id: 'p_no_desc',
+      name: 'No Description Preset',
+      description: '',
+      target: 'localStorage',
+      rawEntries: { foo: 'bar' },
+    });
+    expect(noDesc.ok).toBe(true);
+    if (noDesc.ok) {
+      expect(noDesc.value.description).toBe('');
+    }
+  });
+
+  it('should handle StorageKey validation failure during preset creation', () => {
+    const res = createPreset({
+      id: 'p_bad_key',
+      name: 'Bad Key Preset',
+      description: 'Contains empty key',
+      target: 'localStorage',
+      rawEntries: { '': 'some_value' },
+    });
+    expect(res.ok).toBe(false);
+    if (!res.ok) {
+      expect(res.error.message).toContain('Invalid StorageKey');
+    }
+  });
+
+  it('should handle default arguments for admin, guest, and corrupted presets', () => {
+    const adminDefault = generateAdminPreset();
+    expect(adminDefault.ok).toBe(true);
+    if (adminDefault.ok) {
+      expect(adminDefault.value.entries.user_role).toBe('super_admin');
+      expect(adminDefault.value.entries.user_email).toMatch(/^admin_.*@company\.org$/);
+    }
+
+    const guestDefault = generateGuestPreset();
+    expect(guestDefault.ok).toBe(true);
+    if (guestDefault.ok) {
+      expect(guestDefault.value.entries.guest_session_id).toMatch(/^guest_sess_/);
+      expect(guestDefault.value.entries.theme_preference).toBe('system_default');
+    }
+
+    const corruptedDefault = generateCorruptedPreset();
+    expect(corruptedDefault.ok).toBe(true);
+    if (corruptedDefault.ok) {
+      expect(corruptedDefault.value.name).toContain('json_syntax_error');
     }
   });
 });
