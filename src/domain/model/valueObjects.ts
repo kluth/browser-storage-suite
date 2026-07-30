@@ -62,3 +62,6 @@ export class Node3DPositionVO {
   }
 }
 
+export const Node3DPosition = Node3DPositionVO;
+export type Node3DPosition = Node3DPositionVO;
+
