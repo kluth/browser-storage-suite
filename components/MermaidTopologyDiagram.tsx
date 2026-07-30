@@ -467,24 +467,27 @@ export default function MermaidTopologyDiagram({ entries, currentUrl = 'https://
                         </span>
                       </div>
 
-                      <pre
+                      <div
                         style={{
                           margin: 0,
                           background: '#030712',
                           border: '1px solid #1e293b',
                           borderRadius: 6,
-                          padding: '8px 12px',
+                          padding: '10px 12px',
                           fontSize: 11,
-                          lineHeight: '1.5',
+                          lineHeight: '1.6',
                           color: '#e2e8f0',
                           whiteSpace: 'pre-wrap',
                           wordBreak: 'break-all',
                           fontFamily: 'Consolas, Monaco, "Andale Mono", monospace',
                           boxSizing: 'border-box',
+                          minHeight: 38,
+                          display: 'flex',
+                          alignItems: 'center',
                         }}
                       >
                         {formattedVal}
-                      </pre>
+                      </div>
                     </div>
                   );
                 })}
@@ -572,7 +575,7 @@ export default function MermaidTopologyDiagram({ entries, currentUrl = 'https://
         const matched = entries.filter((e) => e.target.toLowerCase().includes(eng.name.toLowerCase()));
         const displayItems = matched.slice(0, MAX_PREVIEW_ITEMS);
         const hasMore = matched.length > MAX_PREVIEW_ITEMS;
-        const clusterHeight = 44 + Math.max(displayItems.length, 1) * 60 + (hasMore ? 38 : 0) + 10;
+        const clusterHeight = 44 + Math.max(displayItems.length, 1) * 64 + (hasMore ? 40 : 0) + 10;
 
         if (idx % 2 === 0) {
           positions[idx] = { x: col1X, y: leftY, height: clusterHeight };
@@ -585,7 +588,7 @@ export default function MermaidTopologyDiagram({ entries, currentUrl = 'https://
         const matched = entries.filter((e) => e.target.toLowerCase().includes(eng.name.toLowerCase()));
         const displayItems = matched.slice(0, MAX_PREVIEW_ITEMS);
         const hasMore = matched.length > MAX_PREVIEW_ITEMS;
-        const clusterHeight = 44 + Math.max(displayItems.length, 1) * 60 + (hasMore ? 38 : 0) + 10;
+        const clusterHeight = 44 + Math.max(displayItems.length, 1) * 64 + (hasMore ? 40 : 0) + 10;
 
         if (idx % 2 === 1) {
           positions[idx] = { x: col2X, y: rightY, height: clusterHeight };
@@ -667,12 +670,12 @@ export default function MermaidTopologyDiagram({ entries, currentUrl = 'https://
                   ) : (
                     <>
                       {displayItems.map((item, itemIdx) => {
-                        const itemY = 44 + itemIdx * 60;
+                        const itemY = 44 + itemIdx * 64;
                         const formattedVal = formatValuePayload(item.value).replace(/[\r\n]+/g, ' ');
                         const byteSize = new Blob([item.key + item.value]).size;
 
                         return (
-                          <foreignObject key={itemIdx} x="10" y={itemY} width={colWidth - 20} height="52">
+                          <foreignObject key={itemIdx} x="10" y={itemY} width={colWidth - 20} height="56">
                             <div
                               onDoubleClick={(e) => {
                                 e.stopPropagation();
@@ -727,11 +730,13 @@ export default function MermaidTopologyDiagram({ entries, currentUrl = 'https://
                                 style={{
                                   color: '#94a3b8',
                                   fontSize: 9,
-                                  lineHeight: 1.45,
+                                  lineHeight: '1.4',
+                                  paddingTop: 2,
                                   fontFamily: 'Consolas, Monaco, "Andale Mono", monospace',
                                   overflow: 'hidden',
                                   textOverflow: 'ellipsis',
                                   whiteSpace: 'nowrap',
+                                  boxSizing: 'border-box',
                                 }}
                               >
                                 {formattedVal}
@@ -743,7 +748,7 @@ export default function MermaidTopologyDiagram({ entries, currentUrl = 'https://
 
                       {/* Expansion Banner for remaining entries */}
                       {remainingCount > 0 && (
-                        <foreignObject x="10" y={44 + displayItems.length * 60} width={colWidth - 20} height="32">
+                        <foreignObject x="10" y={44 + displayItems.length * 64} width={colWidth - 20} height="32">
                           <div
                             onDoubleClick={(e) => {
                               e.stopPropagation();
