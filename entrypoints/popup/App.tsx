@@ -565,7 +565,9 @@ console.log('LocalStorage State:', data);`;
               </div>
             }
           >
-            <SpatialGraphCanvas />
+            <SpatialGraphCanvas
+              storageEntries={items.map((i) => ({ key: i.key, value: i.value, target: storageType === 'local' ? 'localStorage' : storageType === 'session' ? 'sessionStorage' : 'cookie' }))}
+            />
           </Suspense>
         </main>
       )}

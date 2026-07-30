@@ -46,7 +46,10 @@ export function deriveGraphNodesFromEntries(
   }));
 }
 
-export function generateExplodingChildNodes(targetEngine: string): { nodes: GraphNode[]; links: GraphLink[] } {
+export function generateExplodingChildNodes(
+  targetEngine: string,
+  storageEntries?: Array<{ key: string; value: string; target: StorageTarget }>
+): { nodes: GraphNode[]; links: GraphLink[] } {
   const engineKey = targetEngine.replace('node_', '');
   const childNodes: GraphNode[] = [];
   const childLinks: GraphLink[] = [];
@@ -59,54 +62,47 @@ export function generateExplodingChildNodes(targetEngine: string): { nodes: Grap
     size: 15,
   });
 
-  let sampleKeys: { key: string; type: 'table' | 'entity' | 'key' }[] = [];
+  // Filter actual factual page storage entries for this engine target
+  const realEngineEntries = (storageEntries || []).filter(
+    (entry) => entry.target.toLowerCase() === engineKey || engineKey.includes(entry.target.toLowerCase())
+  );
 
-  if (engineKey.includes('indexedDB')) {
-    sampleKeys = [
-      { key: 'user_credentials_store', type: 'table' },
-      { key: 'cache_blob_store', type: 'table' },
-      { key: 'telemetry_queue_store', type: 'table' },
-      { key: 'auth_token_entity', type: 'entity' },
-      { key: 'app_state_blob', type: 'key' },
-    ];
-  } else if (engineKey.includes('local')) {
-    sampleKeys = [
-      { key: 'user_session_jwt', type: 'entity' },
-      { key: 'ui_theme_mode', type: 'key' },
-      { key: 'cart_items_json', type: 'table' },
-      { key: 'feature_flags', type: 'key' },
-    ];
-  } else if (engineKey.includes('session')) {
-    sampleKeys = [
-      { key: 'temp_auth_challenge', type: 'entity' },
-      { key: 'draft_form_state', type: 'key' },
-    ];
-  } else if (engineKey.includes('cookie')) {
-    sampleKeys = [
-      { key: '__Secure-next-auth.session-token', type: 'entity' },
-      { key: '_ga_analytics_id', type: 'key' },
-    ];
+  if (realEngineEntries.length > 0) {
+    realEngineEntries.forEach((entry, idx) => {
+      const childId = `child_${engineKey}_${idx}_${entry.key}`;
+      const nodeType = entry.key.includes('jwt') || entry.key.includes('token')
+        ? 'entity'
+        : entry.value.startsWith('{') || entry.value.startsWith('[')
+        ? 'table'
+        : 'key';
+
+      childNodes.push({
+        id: childId,
+        label: entry.key,
+        type: nodeType,
+        size: new Blob([entry.key + entry.value]).size || 8,
+      });
+      childLinks.push({
+        source: parentNodeId,
+        target: childId,
+        strength: 1.0,
+      });
+    });
   } else {
-    sampleKeys = [
-      { key: 'cached_api_responses', type: 'table' },
-      { key: 'asset_bundle_v1', type: 'key' },
-    ];
-  }
-
-  sampleKeys.forEach((item, idx) => {
-    const childId = `child_${engineKey}_${idx}_${item.key}`;
+    // If engine has no stored items, create a factual status node stating empty engine
+    const emptyChildId = `child_${engineKey}_empty`;
     childNodes.push({
-      id: childId,
-      label: item.key,
-      type: item.type,
-      size: 8,
+      id: emptyChildId,
+      label: `Empty ${engineKey.toUpperCase()} Engine`,
+      type: 'key',
+      size: 5,
     });
     childLinks.push({
       source: parentNodeId,
-      target: childId,
-      strength: 1.0,
+      target: emptyChildId,
+      strength: 0.5,
     });
-  });
+  }
 
   return { nodes: childNodes, links: childLinks };
 }
@@ -192,9 +188,9 @@ export default function SpatialGraphCanvas({
     if (!explodedNodeId) {
       return { effectiveNodes: baseNodes, effectiveLinks: propLinks };
     }
-    const exploded = generateExplodingChildNodes(explodedNodeId);
+    const exploded = generateExplodingChildNodes(explodedNodeId, storageEntries);
     return { effectiveNodes: exploded.nodes, effectiveLinks: exploded.links };
-  }, [baseNodes, propLinks, explodedNodeId]);
+  }, [baseNodes, propLinks, explodedNodeId, storageEntries]);
 
   useEffect(() => {
     setWebglSupported(checkWebGlSupport());
@@ -264,7 +260,6 @@ export default function SpatialGraphCanvas({
 
   const handleNodeDoubleClick = (nodeId: string) => {
     if (explodedNodeId === nodeId) {
-      // Toggle back to root topology
       setExplodedNodeId(null);
       setSelectedChildNode(null);
     } else {
@@ -329,7 +324,7 @@ export default function SpatialGraphCanvas({
             ⬅ Gesamtansicht Zurücksetzen
           </button>
         ) : (
-          <span style={{ fontSize: 10, color: '#94a3b8' }}>💡 Doppelklick auf Node zum Explodieren der Inhalte</span>
+          <span style={{ fontSize: 10, color: '#94a3b8' }}>💡 Doppelklick auf Node zum Explodieren der echten Inhalte</span>
         )}
       </div>
 
@@ -381,7 +376,7 @@ export default function SpatialGraphCanvas({
             onClick={() => onNodeClick?.(n.id)}
             onDoubleClick={() => handleNodeDoubleClick(n.id)}
             style={{ color: n.color, display: 'flex', alignItems: 'center', gap: 4, cursor: 'pointer' }}
-            title="Doppelklick zum Explodieren"
+            title="Doppelklick zum Explodieren der echten Inhalte"
           >
             ● {n.label}
           </span>
