@@ -200,7 +200,7 @@ export default function SpatialGraphCanvas({
         )}
       </div>
 
-      <svg width="100%" height="320" viewBox={`0 0 ${svgWidth} ${svgHeight}`} style={{ background: '#030712', borderRadius: 8 }}>
+      <svg width="100%" height="320" viewBox={`0 0 ${svgWidth} ${svgHeight}`} style={{ background: '#030712', borderRadius: 8, minWidth: '100%', display: 'block' }}>
         <defs>
           <filter id="spatialNodeGlow" x="-20%" y="-20%" width="140%" height="140%">
             <feGaussianBlur stdDeviation="3" result="blur" />
