@@ -417,7 +417,79 @@ export default function MermaidTopologyDiagram({ entries, currentUrl = 'https://
     // C. LEVEL 1 SUB-MERMAID DIAGRAM (Engine Sub-Diagram)
     if (focusedPath.length === 1) {
       const engName = focusedPath[0];
-      const eng = engines.find((e) => e.name === engName) || engines[0];
+      const eng = engines.find((e) => e.name.toLowerCase() === engName.toLowerCase()) || engines[0];
+
+      if (layoutType === 'subgraph_cluster') {
+        return (
+          <div style={{ width: '100%', display: 'flex', flexDirection: 'column', gap: 12 }}>
+            <div style={{ fontSize: 11, color: eng.color, fontWeight: 700, display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
+              <span>{eng.icon} Engine Sub-Diagramm Focus: {engName.toUpperCase()} ({activeItems.length} Einträge)</span>
+              <span style={{ fontSize: 10, color: '#38bdf8' }}>💡 Doppelklick auf Karte für Key Details</span>
+            </div>
+
+            {activeItems.length === 0 ? (
+              <div style={{ padding: 20, textAlign: 'center', background: '#090d16', border: `1.5px solid ${eng.color}`, borderRadius: 8, color: '#64748b', fontSize: 11, fontStyle: 'italic' }}>
+                (Keine Einträge für {engName.toUpperCase()} vorhanden)
+              </div>
+            ) : (
+              <div style={{ display: 'flex', flexDirection: 'column', gap: 12, width: '100%' }}>
+                {activeItems.map((item, idx) => {
+                  const formattedVal = formatValuePayload(item.value);
+                  const byteSize = new Blob([item.key + item.value]).size;
+
+                  return (
+                    <div
+                      key={idx}
+                      onDoubleClick={(e) => {
+                        e.stopPropagation();
+                        setFocusedPath([engName, item.key]);
+                      }}
+                      style={{
+                        background: '#090d16',
+                        border: `1.5px solid ${eng.color}`,
+                        borderRadius: 8,
+                        padding: 12,
+                        cursor: 'pointer',
+                        display: 'flex',
+                        flexDirection: 'column',
+                        gap: 8,
+                        boxShadow: '0 4px 12px rgba(0,0,0,0.3)',
+                      }}
+                      title="Doppelklick: Sub-Diagramm für diesen Key öffnen"
+                    >
+                      <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
+                        <span style={{ color: eng.color, fontWeight: 700, fontSize: 12, fontFamily: 'monospace' }}>
+                          🔑 {item.key}
+                        </span>
+                        <span style={{ color: '#a855f7', fontSize: 10, background: '#a855f71a', padding: '2px 8px', borderRadius: 4, fontWeight: 600 }}>
+                          {byteSize} Bytes
+                        </span>
+                      </div>
+
+                      <pre
+                        style={{
+                          margin: 0,
+                          background: '#030712',
+                          border: '1px solid #1e293b',
+                          borderRadius: 6,
+                          padding: 10,
+                          fontSize: 10,
+                          color: '#e2e8f0',
+                          whiteSpace: 'pre-wrap',
+                          wordBreak: 'break-all',
+                          fontFamily: 'monospace',
+                        }}
+                      >
+                        {formattedVal}
+                      </pre>
+                    </div>
+                  );
+                })}
+              </div>
+            )}
+          </div>
+        );
+      }
 
       if (layoutType === 'star') {
         const leafAngles = activeItems.map((_, i) => (i / Math.max(activeItems.length, 1)) * 2 * Math.PI);
@@ -486,13 +558,13 @@ export default function MermaidTopologyDiagram({ entries, currentUrl = 'https://
     // D. LEVEL 0: MAIN GLOBAL DIAGRAM VIEWS
     if (layoutType === 'subgraph_cluster') {
       return (
-        <div style={{ width: '100%', display: 'flex', flexDirection: 'column', gap: 10 }}>
+        <div style={{ width: '100%', display: 'flex', flexDirection: 'column', gap: 12 }}>
           <div style={{ fontSize: 11, color: '#94a3b8', display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
-            <span>📦 Storage Cluster Vollansicht — Alle Daten & JSON/YAML Formatierungen sofort expandiert:</span>
+            <span>📦 Storage Cluster Vollansicht — Alle Daten & Formatierungen vollständig expandiert:</span>
             <span style={{ fontSize: 10, color: '#38bdf8', fontWeight: 600 }}>💡 Doppelklick auf Header/Card für Fokus-Ansicht</span>
           </div>
 
-          <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 12, maxHeight: 420, overflowY: 'auto', paddingRight: 4 }}>
+          <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(320px, 1fr))', gap: 14, width: '100%' }}>
             {engines.map((eng) => {
               const matched = entries.filter((e) => e.target.toLowerCase().includes(eng.name.toLowerCase()));
 
@@ -512,27 +584,30 @@ export default function MermaidTopologyDiagram({ entries, currentUrl = 'https://
                     flexDirection: 'column',
                     cursor: 'pointer',
                     boxShadow: '0 4px 12px rgba(0,0,0,0.3)',
+                    height: 'fit-content',
                   }}
-                  title="Doppelklick: Dieses Cluster in Vollbild Sub-Diagramm öffnen"
+                  title="Doppelklick: Dieses Cluster im Sub-Diagramm öffnen"
                 >
                   <div
                     style={{
                       background: '#1e293b',
-                      padding: '8px 12px',
+                      padding: '10px 14px',
                       display: 'flex',
                       alignItems: 'center',
                       justifyContent: 'space-between',
                       userSelect: 'none',
-                      borderBottom: `1px solid ${eng.color}44`,
+                      borderBottom: `1.5px solid ${eng.color}44`,
                     }}
                   >
-                    <span style={{ fontSize: 11, fontWeight: 700, color: eng.color }}>
+                    <span style={{ fontSize: 12, fontWeight: 700, color: eng.color }}>
                       {eng.icon} {eng.name.toUpperCase()} ({matched.length} Einträge)
                     </span>
-                    <span style={{ fontSize: 9, color: '#38bdf8', fontWeight: 600 }}>🔍 Doppelklick für Zoom</span>
+                    <span style={{ fontSize: 10, color: '#38bdf8', fontWeight: 600, background: '#38bdf81a', padding: '2px 8px', borderRadius: 4 }}>
+                      🔍 Sub-Diagramm
+                    </span>
                   </div>
 
-                  <div style={{ padding: 10, display: 'flex', flexDirection: 'column', gap: 8, maxHeight: 260, overflowY: 'auto' }}>
+                  <div style={{ padding: 12, display: 'flex', flexDirection: 'column', gap: 10 }}>
                     {matched.length === 0 ? (
                       <div style={{ fontSize: 10, color: '#64748b', fontStyle: 'italic', padding: 8 }}>
                         (Keine Einträge in diesem Storage Cluster)
@@ -553,22 +628,21 @@ export default function MermaidTopologyDiagram({ entries, currentUrl = 'https://
                               background: '#030712',
                               border: '1px solid #1e293b',
                               borderRadius: 6,
-                              padding: '8px 10px',
+                              padding: '10px 12px',
                               fontSize: 10,
                               fontFamily: 'monospace',
                               display: 'flex',
                               flexDirection: 'column',
-                              gap: 4,
+                              gap: 6,
                               cursor: 'pointer',
-                              transition: 'border-color 0.2s',
                             }}
-                            title="Doppelklick: Key Details im Sub-Diagramm öffnen"
+                            title="Doppelklick: Sub-Diagramm für diesen Key öffnen"
                           >
                             <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
                               <span style={{ color: eng.color, fontWeight: 700, fontSize: 11 }}>
                                 🔑 {item.key}
                               </span>
-                              <span style={{ color: '#a855f7', fontSize: 9, background: '#a855f71a', padding: '1px 6px', borderRadius: 4 }}>
+                              <span style={{ color: '#a855f7', fontSize: 9, background: '#a855f71a', padding: '2px 6px', borderRadius: 4, fontWeight: 600 }}>
                                 {byteSize} B
                               </span>
                             </div>
@@ -579,13 +653,12 @@ export default function MermaidTopologyDiagram({ entries, currentUrl = 'https://
                                 background: '#090d16',
                                 border: '1px solid #1e293b',
                                 borderRadius: 4,
-                                padding: 6,
-                                fontSize: 9,
-                                color: '#cbd5e1',
+                                padding: 8,
+                                fontSize: 9.5,
+                                color: '#e2e8f0',
                                 whiteSpace: 'pre-wrap',
                                 wordBreak: 'break-all',
-                                maxHeight: 90,
-                                overflowY: 'auto',
+                                fontFamily: 'monospace',
                               }}
                             >
                               {formattedVal}
