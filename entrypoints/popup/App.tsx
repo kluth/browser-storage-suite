@@ -1315,6 +1315,14 @@ console.log('LocalStorage State:', data);`;
 
                 <div style={{ fontWeight: 600, color: '#38bdf8', marginTop: 4, display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
                   <span>Beispiel: cURL Request</span>
+                  <button
+                    className="action-btn"
+                    onClick={() => copyCodeSnippet('curl', curlCode)}
+                    style={{ fontSize: 10, color: copiedSnippet === 'curl' ? '#10b981' : '#38bdf8' }}
+                  >
+                    {copiedSnippet === 'curl' ? <Check size={12} /> : <Copy size={12} />} Copy cURL
+                  </button>
+                </div>
                 <div style={{ background: '#030712', padding: 8, borderRadius: 6, border: '1px solid #1e293b' }}>
                   <HighlightedCodeSpan text={curlCode} showLineNumbers={true} />
                 </div>
@@ -1338,6 +1346,23 @@ console.log('LocalStorage State:', data);`;
                 <p>
                   Das <strong>Model Context Protocol (MCP)</strong> erlaubt es KI-Agenten (Claude, Gemini, Cursor), Seitenspeicher per Prompt abzufragen & zu bearbeiten:
                 </p>
+                <div style={{ background: '#030712', padding: 8, borderRadius: 6, border: '1px solid #1e293b', fontFamily: 'monospace', fontSize: 10 }}>
+                  <div><strong>Verfügbare MCP Tools:</strong></div>
+                  <div>• <span style={{ color: '#38bdf8' }}>query_storage_sql</span>: SQL Abfragen gegen Browser-Storage</div>
+                  <div>• <span style={{ color: '#a855f7' }}>get_storage_snapshot</span>: Time-Travel Snapshots per Zeitstempel</div>
+                  <div>• <span style={{ color: '#10b981' }}>seed_mock_data</span>: Schema-konforme Testdaten injizieren</div>
+                </div>
+
+                <div style={{ fontWeight: 600, color: '#a855f7', marginTop: 4, display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
+                  <span>MCP Server Konfiguration (für claude_desktop_config.json / gemini.json):</span>
+                  <button
+                    className="action-btn"
+                    onClick={() => copyCodeSnippet('mcp', mcpConfigCode)}
+                    style={{ fontSize: 10, color: copiedSnippet === 'mcp' ? '#10b981' : '#a855f7' }}
+                  >
+                    {copiedSnippet === 'mcp' ? <Check size={12} /> : <Copy size={12} />} Copy JSON
+                  </button>
+                </div>
                 <div style={{ background: '#030712', padding: 8, borderRadius: 6, border: '1px solid #1e293b' }}>
                   <HighlightedCodeSpan text={mcpConfigCode} showLineNumbers={true} />
                 </div>
