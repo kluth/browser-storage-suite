@@ -1,6 +1,6 @@
 import React, { useState, useMemo } from 'react';
 import { StorageTarget } from '../src/domain/model/valueObjects';
-import { Copy, Check, Download, Code, Network, GitBranch, Layers, Activity, ChevronDown, ChevronUp } from 'lucide-react';
+import { Copy, Check, Download, Code, Network, GitBranch, Layers, Activity, ChevronRight, Home, CornerUpLeft } from 'lucide-react';
 
 export type DiagramLayoutType = 'star' | 'hierarchical_td' | 'hierarchical_lr' | 'subgraph_cluster' | 'sequence_flow';
 
@@ -18,7 +18,8 @@ export interface MermaidTopologyDiagramProps {
 export function generateMermaidCode(
   entries: StorageEntryItem[],
   layoutType: DiagramLayoutType,
-  domainName: string = 'Active Page'
+  domainName: string = 'Active Page',
+  focusedPath: string[] = []
 ): string {
   const sanitize = (text: string) =>
     String(text || '')
@@ -28,6 +29,85 @@ export function generateMermaidCode(
 
   const cleanDomain = sanitize(domainName.replace(/^https?:\/\//, '')) || 'Active Page';
 
+  // 1. Level 2 Drilldown: Focused Key Sub-Diagram (Key -> Value, Type, Size, Provenance)
+  if (focusedPath.length === 2) {
+    const [targetEng, keyName] = focusedPath;
+    const item = entries.find((e) => e.target.toLowerCase().includes(targetEng.toLowerCase()) && e.key === keyName);
+    const valText = item ? sanitize(item.value) : 'undefined';
+    const valSize = item ? new Blob([item.key + item.value]).size : 0;
+
+    let code = `flowchart TD\n`;
+    code += `  style KEY_ROOT fill:#0284c7,stroke:#38bdf8,stroke-width:3px,color:#ffffff;\n`;
+    code += `  KEY_ROOT["🔑 ${sanitize(keyName)}"]\n`;
+    code += `  KEY_ROOT --> VAL_NODE["📄 Value: ${valText.slice(0, 30)}..."]\n`;
+    code += `  KEY_ROOT --> SIZE_NODE["📊 Size: ${valSize} Bytes"]\n`;
+    code += `  KEY_ROOT --> ENGINE_NODE["📦 Engine: ${targetEng}"]\n`;
+    code += `  KEY_ROOT --> PROV_NODE["📍 Tracing: User Action / Interceptor"]\n`;
+
+    code += `  style VAL_NODE fill:#0f172a,stroke:#38bdf8,color:#cbd5e1;\n`;
+    code += `  style SIZE_NODE fill:#0f172a,stroke:#a855f7,color:#cbd5e1;\n`;
+    code += `  style ENGINE_NODE fill:#0f172a,stroke:#10b981,color:#cbd5e1;\n`;
+    code += `  style PROV_NODE fill:#0f172a,stroke:#f59e0b,color:#cbd5e1;\n`;
+    return code;
+  }
+
+  // 2. Level 1 Drilldown: Focused Engine Sub-Diagram (Engine -> All Child Keys)
+  if (focusedPath.length === 1) {
+    const targetEng = focusedPath[0];
+    const engItems = entries.filter((e) => e.target.toLowerCase().includes(targetEng.toLowerCase()));
+
+    if (layoutType === 'star') {
+      let code = `graph LR\n`;
+      code += `  style ENG_ROOT fill:#a855f7,stroke:#c084fc,stroke-width:3px,color:#ffffff;\n`;
+      code += `  ENG_ROOT["📦 ${targetEng.toUpperCase()} (${engItems.length} Einträge)"]\n`;
+
+      engItems.forEach((item, idx) => {
+        const itemId = `ITEM_${idx}`;
+        const keyLabel = sanitize(item.key);
+        code += `  ENG_ROOT --- ${itemId}["🔑 ${keyLabel}"]\n`;
+        code += `  style ${itemId} fill:#0f172a,stroke:#38bdf8,color:#38bdf8;\n`;
+      });
+      return code;
+    }
+
+    if (layoutType === 'hierarchical_td' || layoutType === 'hierarchical_lr') {
+      const dir = layoutType === 'hierarchical_td' ? 'TD' : 'LR';
+      let code = `flowchart ${dir}\n`;
+      code += `  EngNode["📦 ${targetEng.toUpperCase()} Engine Root"]\n`;
+      engItems.forEach((item, idx) => {
+        const leafId = `Leaf_${idx}`;
+        const cleanKey = sanitize(item.key);
+        const cleanVal = sanitize(item.value.slice(0, 16));
+        code += `  EngNode --> ${leafId}["🔑 ${cleanKey} : ${cleanVal}"]\n`;
+      });
+      return code;
+    }
+
+    if (layoutType === 'subgraph_cluster') {
+      let code = `flowchart TB\n`;
+      code += `  subgraph ${targetEng.toUpperCase()} ["📦 ${targetEng.toUpperCase()} Sub-Diagram Cluster"]\n`;
+      engItems.forEach((item, idx) => {
+        const itemId = `Sub_${idx}`;
+        code += `    ${itemId}["🔑 ${sanitize(item.key)} : ${sanitize(item.value.slice(0, 20))}"]\n`;
+      });
+      code += `  end\n`;
+      return code;
+    }
+
+    // Sequence for single engine
+    let code = `sequenceDiagram\n`;
+    code += `  autonumber\n`;
+    code += `  actor User as 👤 User\n`;
+    code += `  participant Engine as 📦 ${targetEng}\n`;
+    code += `  participant Suite as 🛠️ Storage Suite\n`;
+    engItems.slice(0, 5).forEach((item) => {
+      code += `  User->>Engine: Mutate Key "${sanitize(item.key)}"\n`;
+      code += `  Engine-->>Suite: Intercept Mutation (${new Blob([item.value]).size} B)\n`;
+    });
+    return code;
+  }
+
+  // 3. Level 0: Main Global Diagram
   const grouped: Record<string, StorageEntryItem[]> = {
     localStorage: [],
     sessionStorage: [],
@@ -127,7 +207,7 @@ export default function MermaidTopologyDiagram({ entries, currentUrl = 'https://
   const [layoutType, setLayoutType] = useState<DiagramLayoutType>('star');
   const [showCode, setShowCode] = useState<boolean>(false);
   const [copied, setCopied] = useState<boolean>(false);
-  const [explodedEngine, setExplodedEngine] = useState<string | null>(null);
+  const [focusedPath, setFocusedPath] = useState<string[]>([]);
   const [expandedClusters, setExpandedClusters] = useState<Record<string, boolean>>({
     localStorage: true,
     sessionStorage: true,
@@ -138,8 +218,8 @@ export default function MermaidTopologyDiagram({ entries, currentUrl = 'https://
   const cleanDomain = currentUrl.replace(/^https?:\/\//, '') || 'Active Page';
 
   const mermaidCode = useMemo(() => {
-    return generateMermaidCode(entries, layoutType, currentUrl);
-  }, [entries, layoutType, currentUrl]);
+    return generateMermaidCode(entries, layoutType, currentUrl, focusedPath);
+  }, [entries, layoutType, currentUrl, focusedPath]);
 
   const handleCopyCode = () => {
     navigator.clipboard.writeText(mermaidCode);
@@ -167,76 +247,148 @@ export default function MermaidTopologyDiagram({ entries, currentUrl = 'https://
     { name: 'indexedDB', color: '#f59e0b', icon: '🗄️' },
   ];
 
-  const toggleClusterExpand = (engName: string) => {
-    setExpandedClusters((prev) => ({
-      ...prev,
-      [engName]: !prev[engName],
-    }));
-  };
-
   const renderSvgDiagram = () => {
     const width = 640;
     const height = 420;
     const cx = width / 2;
     const cy = height / 2;
 
-    // Exploded View for Engine Detail Exploration
-    if (explodedEngine) {
-      const eng = engines.find((e) => e.name === explodedEngine) || engines[0];
-      const matchedEntries = entries.filter((e) => e.target.toLowerCase().includes(eng.name.toLowerCase()));
+    // A. LEVEL 2 SUB-MERMAID DIAGRAM (Key Detail Sub-Diagram)
+    if (focusedPath.length === 2) {
+      const [engName, keyName] = focusedPath;
+      const eng = engines.find((e) => e.name === engName) || engines[0];
+      const item = entries.find((e) => e.target.toLowerCase().includes(engName.toLowerCase()) && e.key === keyName);
+      const valStr = item ? item.value : 'undefined';
+      const sizeBytes = item ? new Blob([item.key + item.value]).size : 0;
 
       return (
-        <div style={{ width: '100%', display: 'flex', flexDirection: 'column', gap: 10 }}>
-          <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', background: '#1e293b', padding: '8px 12px', borderRadius: 8, border: `1px solid ${eng.color}` }}>
-            <div style={{ fontSize: 12, fontWeight: 700, color: eng.color }}>
-              💥 {eng.icon} Exploded Storage Engine: {eng.name.toUpperCase()} ({matchedEntries.length} Einträge)
-            </div>
-            <button
-              onClick={() => setExplodedEngine(null)}
-              style={{ padding: '3px 8px', fontSize: 10, background: '#10b981', color: '#030712', border: 'none', borderRadius: 4, fontWeight: 700, cursor: 'pointer' }}
-            >
-              ⬅ Zurück zur Gesamtübersicht
-            </button>
-          </div>
+        <svg width="100%" height={height} viewBox={`0 0 ${width} ${height}`} style={{ background: '#030712', borderRadius: 8, minWidth: '100%', display: 'block' }}>
+          {/* Connecting Lines */}
+          <line x1={cx} y1={cy} x2={cx - 160} y2={cy - 100} stroke="#38bdf8" strokeWidth="2" strokeDasharray="3 3" />
+          <line x1={cx} y1={cy} x2={cx + 160} y2={cy - 100} stroke="#a855f7" strokeWidth="2" strokeDasharray="3 3" />
+          <line x1={cx} y1={cy} x2={cx - 160} y2={cy + 100} stroke="#10b981" strokeWidth="2" strokeDasharray="3 3" />
+          <line x1={cx} y1={cy} x2={cx + 160} y2={cy + 100} stroke="#f59e0b" strokeWidth="2" strokeDasharray="3 3" />
 
-          <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fill, minmax(280px, 1fr))', gap: 8, maxHeight: 380, overflowY: 'auto' }}>
-            {matchedEntries.length === 0 ? (
-              <div style={{ padding: 20, textAlign: 'center', color: '#94a3b8', fontSize: 11 }}>
-                Keine Einträge in {eng.name} vorhanden.
-              </div>
-            ) : (
-              matchedEntries.map((item, idx) => (
-                <div key={idx} style={{ background: '#030712', border: `1px solid ${eng.color}`, padding: 8, borderRadius: 6, fontSize: 11 }}>
-                  <div style={{ color: eng.color, fontWeight: 700, fontFamily: 'monospace', marginBottom: 4 }}>
-                    🔑 {item.key}
-                  </div>
-                  <div style={{ background: '#090d16', padding: 6, borderRadius: 4, color: '#cbd5e1', fontSize: 10, fontFamily: 'monospace', wordBreak: 'break-all', maxHeight: 80, overflowY: 'auto' }}>
-                    {item.value}
-                  </div>
-                  <div style={{ fontSize: 9, color: '#94a3b8', marginTop: 4, display: 'flex', justifyContent: 'space-between' }}>
-                    <span>Size: {new Blob([item.key + item.value]).size} B</span>
-                    <span style={{ color: '#10b981' }}>Double-click to edit</span>
-                  </div>
-                </div>
-              ))
-            )}
-          </div>
-        </div>
+          {/* Root Sub-Node (Key) */}
+          <g transform={`translate(${cx}, ${cy})`}>
+            <rect x="-90" y="-24" width="180" height="48" rx="8" fill="#0284c7" stroke="#38bdf8" strokeWidth="3" />
+            <text y="-4" textAnchor="middle" fill="#ffffff" fontSize="12" fontWeight="bold">🔑 Key: {keyName.slice(0, 14)}</text>
+            <text y="12" textAnchor="middle" fill="#94a3b8" fontSize="9">Sub-Diagram Level 2</text>
+          </g>
+
+          {/* Sub-Attribute Nodes */}
+          <g transform={`translate(${cx - 160}, ${cy - 100})`}>
+            <rect x="-70" y="-20" width="140" height="40" rx="6" fill="#1e293b" stroke="#38bdf8" strokeWidth="1.5" />
+            <text y="-2" textAnchor="middle" fill="#38bdf8" fontSize="10" fontWeight="bold">📄 Value Payload</text>
+            <text y="10" textAnchor="middle" fill="#cbd5e1" fontSize="9">{valStr.slice(0, 16)}...</text>
+          </g>
+
+          <g transform={`translate(${cx + 160}, ${cy - 100})`}>
+            <rect x="-70" y="-20" width="140" height="40" rx="6" fill="#1e293b" stroke="#a855f7" strokeWidth="1.5" />
+            <text y="-2" textAnchor="middle" fill="#a855f7" fontSize="10" fontWeight="bold">📊 Byte Size</text>
+            <text y="10" textAnchor="middle" fill="#cbd5e1" fontSize="9">{sizeBytes} Bytes</text>
+          </g>
+
+          <g transform={`translate(${cx - 160}, ${cy + 100})`}>
+            <rect x="-70" y="-20" width="140" height="40" rx="6" fill="#1e293b" stroke="#10b981" strokeWidth="1.5" />
+            <text y="-2" textAnchor="middle" fill="#10b981" fontSize="10" fontWeight="bold">📦 Parent Engine</text>
+            <text y="10" textAnchor="middle" fill="#cbd5e1" fontSize="9">{engName}</text>
+          </g>
+
+          <g transform={`translate(${cx + 160}, ${cy + 100})`}>
+            <rect x="-70" y="-20" width="140" height="40" rx="6" fill="#1e293b" stroke="#f59e0b" strokeWidth="1.5" />
+            <text y="-2" textAnchor="middle" fill="#f59e0b" fontSize="10" fontWeight="bold">📍 Provenance Trace</text>
+            <text y="10" textAnchor="middle" fill="#cbd5e1" fontSize="9">User Interception</text>
+          </g>
+        </svg>
       );
     }
 
-    // 1. Cluster View (Full Visibility with Expand/Collapse Controls)
+    // B. LEVEL 1 SUB-MERMAID DIAGRAM (Engine Sub-Diagram)
+    if (focusedPath.length === 1) {
+      const engName = focusedPath[0];
+      const eng = engines.find((e) => e.name === engName) || engines[0];
+      const matched = entries.filter((e) => e.target.toLowerCase().includes(engName.toLowerCase()));
+
+      if (layoutType === 'star') {
+        const leafAngles = matched.map((_, i) => (i / Math.max(matched.length, 1)) * 2 * Math.PI);
+
+        return (
+          <svg width="100%" height={height} viewBox={`0 0 ${width} ${height}`} style={{ background: '#030712', borderRadius: 8, minWidth: '100%', display: 'block' }}>
+            {/* Connecting Star Rays */}
+            {matched.map((item, idx) => {
+              const angle = leafAngles[idx];
+              const r = 140;
+              const lx = cx + Math.cos(angle) * r;
+              const ly = cy + Math.sin(angle) * r;
+
+              return (
+                <g key={idx}>
+                  <line x1={cx} y1={cy} x2={lx} y2={ly} stroke={eng.color} strokeWidth="1.5" strokeDasharray="3 3" opacity="0.8" />
+                  <g transform={`translate(${lx}, ${ly})`} onDoubleClick={() => setFocusedPath([engName, item.key])} style={{ cursor: 'pointer' }} title="Doppelklick für Key-Detail-Diagramm">
+                    <rect x="-55" y="-14" width="110" height="28" rx="6" fill="#090d16" stroke={eng.color} strokeWidth="1.5" />
+                    <text y="-1" textAnchor="middle" fill="#f8fafc" fontSize="10" fontWeight="bold">🔑 {item.key.slice(0, 10)}</text>
+                    <text y="9" textAnchor="middle" fill="#94a3b8" fontSize="8">{item.value.slice(0, 10)}</text>
+                  </g>
+                </g>
+              );
+            })}
+
+            {/* Central Engine Sub-Root Node */}
+            <g transform={`translate(${cx}, ${cy})`}>
+              <rect x="-80" y="-24" width="160" height="48" rx="8" fill="#1e293b" stroke={eng.color} strokeWidth="3" />
+              <text y="-4" textAnchor="middle" fill="#ffffff" fontSize="12" fontWeight="bold">{eng.icon} {engName.toUpperCase()}</text>
+              <text y="12" textAnchor="middle" fill={eng.color} fontSize="10">{matched.length} Einträge Sub-Diagramm</text>
+            </g>
+          </svg>
+        );
+      }
+
+      if (layoutType === 'hierarchical_td' || layoutType === 'hierarchical_lr') {
+        const isTD = layoutType === 'hierarchical_td';
+        return (
+          <svg width="100%" height={height} viewBox={`0 0 ${width} ${height}`} style={{ background: '#030712', borderRadius: 8, minWidth: '100%', display: 'block' }}>
+            {/* Top/Left Engine Root */}
+            <g transform={`translate(${isTD ? cx : 70}, ${isTD ? 45 : cy})`}>
+              <rect x="-70" y="-20" width="140" height="40" rx="8" fill="#1e293b" stroke={eng.color} strokeWidth="2" />
+              <text y="-2" textAnchor="middle" fill="#ffffff" fontSize="11" fontWeight="bold">{eng.icon} {engName.toUpperCase()}</text>
+              <text y="10" textAnchor="middle" fill={eng.color} fontSize="9">Engine Sub-Root</text>
+            </g>
+
+            {/* Sub-Children Nodes */}
+            {matched.map((item, idx) => {
+              const lx = isTD ? (idx * 140) + 70 : 280;
+              const ly = isTD ? 220 : (idx * 65) + 50;
+              const startX = isTD ? cx : 140;
+              const startY = isTD ? 65 : cy;
+
+              return (
+                <g key={idx}>
+                  <line x1={startX} y1={startY} x2={lx} y2={ly} stroke={eng.color} strokeWidth="1.5" strokeDasharray="3 3" />
+                  <g transform={`translate(${lx}, ${ly})`} onDoubleClick={() => setFocusedPath([engName, item.key])} style={{ cursor: 'pointer' }} title="Doppelklick für Key-Detail-Diagramm">
+                    <rect x="-60" y="-16" width="120" height="32" rx="6" fill="#090d16" stroke="#334155" strokeWidth="1.5" />
+                    <text y="-1" textAnchor="middle" fill={eng.color} fontSize="10" fontWeight="bold">🔑 {item.key.slice(0, 12)}</text>
+                    <text y="10" textAnchor="middle" fill="#94a3b8" fontSize="8">{item.value.slice(0, 14)}</text>
+                  </g>
+                </g>
+              );
+            })}
+          </svg>
+        );
+      }
+    }
+
+    // C. LEVEL 0: MAIN GLOBAL DIAGRAM VIEWS
     if (layoutType === 'subgraph_cluster') {
       return (
         <div style={{ width: '100%', display: 'flex', flexDirection: 'column', gap: 10 }}>
           <div style={{ fontSize: 11, color: '#94a3b8', marginBottom: 2 }}>
-            📦 Storage Cluster Übersicht (Klicke auf Header zum Ein/Ausklappen oder Doppelklick zum Explodieren):
+            📦 Storage Cluster Übersicht (Doppelklick auf Engine-Header für Sub-Diagramm):
           </div>
 
           <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 10, maxHeight: 390, overflowY: 'auto' }}>
             {engines.map((eng) => {
               const matched = entries.filter((e) => e.target.toLowerCase().includes(eng.name.toLowerCase()));
-              const isExpanded = expandedClusters[eng.name] !== false;
 
               return (
                 <div
@@ -250,10 +402,9 @@ export default function MermaidTopologyDiagram({ entries, currentUrl = 'https://
                     flexDirection: 'column',
                   }}
                 >
-                  {/* Cluster Header */}
+                  {/* Cluster Header with Double-Click Sub-Diagram Exploration */}
                   <div
-                    onClick={() => toggleClusterExpand(eng.name)}
-                    onDoubleClick={() => setExplodedEngine(eng.name)}
+                    onDoubleClick={() => setFocusedPath([eng.name])}
                     style={{
                       background: '#1e293b',
                       padding: '8px 10px',
@@ -263,46 +414,45 @@ export default function MermaidTopologyDiagram({ entries, currentUrl = 'https://
                       cursor: 'pointer',
                       userSelect: 'none',
                     }}
-                    title="Klick: Ein/Ausklappen | Doppelklick: Engine Explodieren"
+                    title="Doppelklick: Sub-Diagramm für diese Engine öffnen!"
                   >
                     <span style={{ fontSize: 11, fontWeight: 700, color: eng.color }}>
                       {eng.icon} {eng.name.toUpperCase()} ({matched.length})
                     </span>
-                    <div style={{ display: 'flex', alignItems: 'center', gap: 4, color: '#94a3b8' }}>
-                      {isExpanded ? <ChevronUp size={14} /> : <ChevronDown size={14} />}
-                    </div>
+                    <span style={{ fontSize: 9, color: '#38bdf8', fontWeight: 600 }}>🔍 Doppelklick für Sub-Diagramm</span>
                   </div>
 
-                  {/* Cluster Items List (NO hidden items!) */}
-                  {isExpanded && (
-                    <div style={{ padding: 8, display: 'flex', flexDirection: 'column', gap: 4, maxHeight: 180, overflowY: 'auto' }}>
-                      {matched.length === 0 ? (
-                        <div style={{ fontSize: 10, color: '#64748b', fontStyle: 'italic', padding: 4 }}>
-                          (Keine Einträge)
+                  {/* Cluster Items */}
+                  <div style={{ padding: 8, display: 'flex', flexDirection: 'column', gap: 4, maxHeight: 180, overflowY: 'auto' }}>
+                    {matched.length === 0 ? (
+                      <div style={{ fontSize: 10, color: '#64748b', fontStyle: 'italic', padding: 4 }}>
+                        (Keine Einträge)
+                      </div>
+                    ) : (
+                      matched.map((item, idx) => (
+                        <div
+                          key={idx}
+                          onDoubleClick={() => setFocusedPath([eng.name, item.key])}
+                          style={{
+                            background: '#030712',
+                            border: '1px solid #1e293b',
+                            borderRadius: 4,
+                            padding: '4px 8px',
+                            fontSize: 10,
+                            fontFamily: 'monospace',
+                            display: 'flex',
+                            justifyContent: 'space-between',
+                            alignItems: 'center',
+                            cursor: 'pointer',
+                          }}
+                          title="Doppelklick für Key Sub-Diagramm"
+                        >
+                          <span style={{ color: eng.color, fontWeight: 600 }}>🔑 {item.key.slice(0, 16)}</span>
+                          <span style={{ color: '#94a3b8', fontSize: 9 }}>{item.value.slice(0, 12)}...</span>
                         </div>
-                      ) : (
-                        matched.map((item, idx) => (
-                          <div
-                            key={idx}
-                            style={{
-                              background: '#030712',
-                              border: '1px solid #1e293b',
-                              borderRadius: 4,
-                              padding: '4px 8px',
-                              fontSize: 10,
-                              fontFamily: 'monospace',
-                              display: 'flex',
-                              justifyContent: 'space-between',
-                              alignItems: 'center',
-                            }}
-                          >
-                            <span style={{ color: eng.color, fontWeight: 600 }}>🔑 {item.key.slice(0, 16)}</span>
-                            <span style={{ color: '#94a3b8', fontSize: 9 }}>{item.value.slice(0, 12)}...</span>
-                          </div>
-                        ))
-                      )}
-                    </div>
-                  )}
+                      ))
+                    )}
+                  </div>
                 </div>
               );
             })}
@@ -311,7 +461,6 @@ export default function MermaidTopologyDiagram({ entries, currentUrl = 'https://
       );
     }
 
-    // 2. Sequence Diagram View
     if (layoutType === 'sequence_flow') {
       const steps = [
         { from: '👤 User', to: '🌐 Web App', msg: 'UI Interaction / Event', y: 70 },
@@ -351,7 +500,6 @@ export default function MermaidTopologyDiagram({ entries, currentUrl = 'https://
       );
     }
 
-    // 3. Hierarchical Top-Down (TD) View
     if (layoutType === 'hierarchical_td') {
       const topY = 40;
       const midY = 150;
@@ -368,26 +516,24 @@ export default function MermaidTopologyDiagram({ entries, currentUrl = 'https://
           {/* Engine Nodes & Branching Lines */}
           {engines.map((eng, idx) => {
             const engX = idx * 150 + 95;
+            const matched = entries.filter((e) => e.target.toLowerCase().includes(eng.name.toLowerCase()));
 
             return (
               <g key={eng.name}>
-                {/* Line from Domain to Engine */}
                 <path d={`M ${cx} ${topY + 18} L ${engX} ${midY - 18}`} stroke={eng.color} strokeWidth="1.5" strokeDasharray="3 3" />
 
-                {/* Engine Node Box */}
-                <g transform={`translate(${engX}, ${midY})`} onDoubleClick={() => setExplodedEngine(eng.name)} style={{ cursor: 'pointer' }}>
+                <g transform={`translate(${engX}, ${midY})`} onDoubleClick={() => setFocusedPath([eng.name])} style={{ cursor: 'pointer' }} title="Doppelklick: Sub-Diagramm öffnen!">
                   <rect x="-60" y="-18" width="120" height="36" rx="6" fill="#1e293b" stroke={eng.color} strokeWidth="2" />
                   <text y="-2" textAnchor="middle" fill="#f8fafc" fontSize="10" fontWeight="bold">{eng.icon} {eng.name}</text>
-                  <text y="10" textAnchor="middle" fill={eng.color} fontSize="9">{entries.filter((e) => e.target.toLowerCase().includes(eng.name.toLowerCase())).length} Einträge</text>
+                  <text y="10" textAnchor="middle" fill={eng.color} fontSize="9">{matched.length} Einträge</text>
                 </g>
 
-                {/* Leaf Key Branch */}
-                {entries.filter((e) => e.target.toLowerCase().includes(eng.name.toLowerCase())).slice(0, 2).map((item, i) => {
+                {matched.slice(0, 2).map((item, i) => {
                   const leafX = engX + (i === 0 ? -28 : 28);
                   return (
                     <g key={i}>
                       <line x1={engX} y1={midY + 18} x2={leafX} y2={leafY - 14} stroke={eng.color} strokeWidth="1" opacity="0.6" />
-                      <g transform={`translate(${leafX}, ${leafY})`}>
+                      <g transform={`translate(${leafX}, ${leafY})`} onDoubleClick={() => setFocusedPath([eng.name, item.key])} style={{ cursor: 'pointer' }}>
                         <rect x="-32" y="-12" width="64" height="24" rx="4" fill="#090d16" stroke="#334155" />
                         <text y="3" textAnchor="middle" fill="#cbd5e1" fontSize="8" fontFamily="monospace">🔑 {item.key.slice(0, 7)}</text>
                       </g>
@@ -401,46 +547,39 @@ export default function MermaidTopologyDiagram({ entries, currentUrl = 'https://
       );
     }
 
-    // 4. Hierarchical Left-Right (LR) View
     if (layoutType === 'hierarchical_lr') {
       const leftX = 65;
       const midX = 250;
       const rightX = 460;
-      const cyLocal = height / 2;
 
       return (
         <svg width="100%" height={height} viewBox={`0 0 ${width} ${height}`} style={{ background: '#030712', borderRadius: 8, minWidth: '100%', display: 'block' }}>
-          {/* Left Domain Root Node */}
-          <g transform={`translate(${leftX}, ${cyLocal})`}>
+          <g transform={`translate(${leftX}, ${cy})`}>
             <rect x="-50" y="-24" width="100" height="48" rx="8" fill="#0284c7" stroke="#38bdf8" strokeWidth="2" />
             <text y="-2" textAnchor="middle" fill="#ffffff" fontSize="11" fontWeight="bold">🌐 Root</text>
             <text y="12" textAnchor="middle" fill="#94a3b8" fontSize="9">{cleanDomain.slice(0, 14)}</text>
           </g>
 
-          {/* Engine Nodes in Column 2 */}
           {engines.map((eng, idx) => {
             const engY = idx * 90 + 55;
             const matched = entries.filter((e) => e.target.toLowerCase().includes(eng.name.toLowerCase()));
 
             return (
               <g key={eng.name}>
-                {/* Curved Bezier Path from Root to Engine */}
-                <path d={`M ${leftX + 50} ${cyLocal} C ${leftX + 140} ${cyLocal}, ${midX - 140} ${engY}, ${midX - 60} ${engY}`} stroke={eng.color} strokeWidth="1.5" fill="none" strokeDasharray="3 3" />
+                <path d={`M ${leftX + 50} ${cy} C ${leftX + 140} ${cy}, ${midX - 140} ${engY}, ${midX - 60} ${engY}`} stroke={eng.color} strokeWidth="1.5" fill="none" strokeDasharray="3 3" />
 
-                {/* Engine Node Box */}
-                <g transform={`translate(${midX}, ${engY})`} onDoubleClick={() => setExplodedEngine(eng.name)} style={{ cursor: 'pointer' }}>
+                <g transform={`translate(${midX}, ${engY})`} onDoubleClick={() => setFocusedPath([eng.name])} style={{ cursor: 'pointer' }} title="Doppelklick: Sub-Diagramm öffnen!">
                   <rect x="-60" y="-18" width="120" height="36" rx="6" fill="#1e293b" stroke={eng.color} strokeWidth="2" />
                   <text y="-2" textAnchor="middle" fill="#f8fafc" fontSize="10" fontWeight="bold">{eng.icon} {eng.name}</text>
                   <text y="10" textAnchor="middle" fill={eng.color} fontSize="9">{matched.length} Einträge</text>
                 </g>
 
-                {/* Leaf Branch Items in Column 3 */}
                 {matched.slice(0, 2).map((item, i) => {
                   const leafY = engY + (i === 0 ? -14 : 14);
                   return (
                     <g key={i}>
                       <line x1={midX + 60} y1={engY} x2={rightX - 55} y2={leafY} stroke={eng.color} strokeWidth="1" opacity="0.6" />
-                      <g transform={`translate(${rightX}, ${leafY})`}>
+                      <g transform={`translate(${rightX}, ${leafY})`} onDoubleClick={() => setFocusedPath([eng.name, item.key])} style={{ cursor: 'pointer' }}>
                         <rect x="-55" y="-10" width="110" height="20" rx="4" fill="#090d16" stroke="#334155" />
                         <text y="3" textAnchor="middle" fill="#cbd5e1" fontSize="9" fontFamily="monospace">🔑 {item.key.slice(0, 12)}</text>
                       </g>
@@ -454,7 +593,7 @@ export default function MermaidTopologyDiagram({ entries, currentUrl = 'https://
       );
     }
 
-    // 5. Default Star View
+    // Default Star View
     const enginePositions = [
       { x: cx - 180, y: cy - 90 },
       { x: cx + 180, y: cy - 90 },
@@ -471,7 +610,6 @@ export default function MermaidTopologyDiagram({ entries, currentUrl = 'https://
           </filter>
         </defs>
 
-        {/* Central Connecting Lines */}
         {enginePositions.map((pos, idx) => (
           <line
             key={`line_${idx}`}
@@ -486,14 +624,12 @@ export default function MermaidTopologyDiagram({ entries, currentUrl = 'https://
           />
         ))}
 
-        {/* Center Root Node */}
         <g transform={`translate(${cx}, ${cy})`}>
           <circle r="36" fill="#0284c7" stroke="#38bdf8" strokeWidth="3" filter="url(#glow)" />
           <text y="-4" textAnchor="middle" fill="#ffffff" fontSize="12" fontWeight="bold">🌐 Active Hub</text>
           <text y="14" textAnchor="middle" fill="#94a3b8" fontSize="10">{cleanDomain.slice(0, 20)}</text>
         </g>
 
-        {/* Engine Nodes & Entries */}
         {engines.map((eng, idx) => {
           const pos = enginePositions[idx];
           const count = entries.filter((e) => e.target.toLowerCase().includes(eng.name.toLowerCase())).length;
@@ -502,9 +638,9 @@ export default function MermaidTopologyDiagram({ entries, currentUrl = 'https://
             <g
               key={eng.name}
               transform={`translate(${pos.x}, ${pos.y})`}
-              onDoubleClick={() => setExplodedEngine(eng.name)}
+              onDoubleClick={() => setFocusedPath([eng.name])}
               style={{ cursor: 'pointer' }}
-              title="Doppelklick zum Explodieren der Inhalte"
+              title="Doppelklick: Unter-Mermaid-Diagramm für diese Engine öffnen!"
             >
               <rect x="-70" y="-24" width="140" height="48" rx="8" fill="#1e293b" stroke={eng.color} strokeWidth="2" filter="url(#glow)" />
               <text y="-4" textAnchor="middle" fill="#f8fafc" fontSize="11" fontWeight="bold">
@@ -533,46 +669,75 @@ export default function MermaidTopologyDiagram({ entries, currentUrl = 'https://
         color: '#f8fafc',
       }}
     >
+      {/* Sub-Diagram Breadcrumb Navigation Bar */}
+      {focusedPath.length > 0 && (
+        <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', background: '#1e293b', padding: '6px 12px', borderRadius: 6, border: '1px solid #38bdf8' }}>
+          <div style={{ display: 'flex', alignItems: 'center', gap: 6, fontSize: 11, fontWeight: 700 }}>
+            <span onClick={() => setFocusedPath([])} style={{ color: '#38bdf8', cursor: 'pointer', display: 'flex', alignItems: 'center', gap: 4 }}>
+              <Home size={13} /> {cleanDomain}
+            </span>
+            {focusedPath.map((step, idx) => (
+              <React.Fragment key={idx}>
+                <ChevronRight size={12} style={{ color: '#64748b' }} />
+                <span
+                  onClick={() => setFocusedPath(focusedPath.slice(0, idx + 1))}
+                  style={{ color: idx === focusedPath.length - 1 ? '#a855f7' : '#cbd5e1', cursor: 'pointer' }}
+                >
+                  {idx === 0 ? `📦 ${step}` : `🔑 ${step}`}
+                </span>
+              </React.Fragment>
+            ))}
+          </div>
+
+          <button
+            onClick={() => setFocusedPath(focusedPath.slice(0, -1))}
+            style={{ display: 'flex', alignItems: 'center', gap: 4, padding: '3px 8px', fontSize: 10, background: '#0284c7', color: '#ffffff', border: 'none', borderRadius: 4, fontWeight: 700, cursor: 'pointer' }}
+          >
+            <CornerUpLeft size={12} /> Ebenen Zurück
+          </button>
+        </div>
+      )}
+
       {/* Diagram Controls Toolbar */}
       <div style={{ display: 'flex', flexWrap: 'wrap', justifyContent: 'space-between', alignItems: 'center', gap: 8 }}>
         <div style={{ display: 'flex', alignItems: 'center', gap: 6, fontSize: 12, fontWeight: 700, color: '#38bdf8' }}>
           <Network size={16} />
-          <span>Mermaid Storage Topology</span>
+          <span>{focusedPath.length === 0 ? 'Mermaid Storage Topology' : `Sub-Mermaid: ${focusedPath.join(' / ')}`}</span>
         </div>
 
         {/* Diagram Type Switcher Selector */}
         <div style={{ display: 'flex', gap: 4, flexWrap: 'wrap' }}>
           <button
             className={`tab-btn ${layoutType === 'star' ? 'active' : ''}`}
-            onClick={() => { setLayoutType('star'); setExplodedEngine(null); }}
+            onClick={() => setLayoutType('star')}
             style={{ fontSize: 11, padding: '4px 8px', display: 'flex', alignItems: 'center', gap: 4 }}
           >
             <Network size={12} /> ⭐ Sternform
           </button>
           <button
             className={`tab-btn ${layoutType === 'hierarchical_td' ? 'active' : ''}`}
-            onClick={() => { setLayoutType('hierarchical_td'); setExplodedEngine(null); }}
+            onClick={() => setLayoutType('hierarchical_td')}
             style={{ fontSize: 11, padding: '4px 8px', display: 'flex', alignItems: 'center', gap: 4 }}
           >
             <GitBranch size={12} /> ⬇️ Hierarchisch (TD)
           </button>
           <button
             className={`tab-btn ${layoutType === 'hierarchical_lr' ? 'active' : ''}`}
-            onClick={() => { setLayoutType('hierarchical_lr'); setExplodedEngine(null); }}
+            onClick={() => setLayoutType('hierarchical_lr')}
             style={{ fontSize: 11, padding: '4px 8px', display: 'flex', alignItems: 'center', gap: 4 }}
           >
             <GitBranch size={12} /> ➡️ Hierarchisch (LR)
           </button>
           <button
             className={`tab-btn ${layoutType === 'subgraph_cluster' ? 'active' : ''}`}
-            onClick={() => { setLayoutType('subgraph_cluster'); setExplodedEngine(null); }}
+            onClick={() => setLayoutType('subgraph_cluster')}
             style={{ fontSize: 11, padding: '4px 8px', display: 'flex', alignItems: 'center', gap: 4 }}
           >
             <Layers size={12} /> 📦 Cluster
           </button>
           <button
             className={`tab-btn ${layoutType === 'sequence_flow' ? 'active' : ''}`}
-            onClick={() => { setLayoutType('sequence_flow'); setExplodedEngine(null); }}
+            onClick={() => setLayoutType('sequence_flow')}
             style={{ fontSize: 11, padding: '4px 8px', display: 'flex', alignItems: 'center', gap: 4 }}
           >
             <Activity size={12} /> 🔄 Sequenz
@@ -591,7 +756,7 @@ export default function MermaidTopologyDiagram({ entries, currentUrl = 'https://
           </button>
           <button
             className="action-btn"
-            title="Kopiere Mermaid Markdown Code"
+            title="Kopiere Sub-Mermaid Markdown Code"
             onClick={handleCopyCode}
             style={{ fontSize: 11, color: copied ? '#10b981' : '#94a3b8' }}
           >
