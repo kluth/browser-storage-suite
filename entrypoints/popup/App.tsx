@@ -121,16 +121,54 @@ export default function App() {
     setTimeout(() => setCopiedSnippet(null), 1500);
   };
 
-  const fetchStorageData = () => {
+  const getTargetWebTab = (): Promise<chrome.tabs.Tab | null> => {
+    return new Promise((resolve) => {
+      if (typeof chrome === 'undefined' || !chrome.tabs) {
+        resolve(null);
+        return;
+      }
+
+      const isExtensionUrl = (url?: string) =>
+        !url ||
+        url.startsWith('chrome-extension://') ||
+        url.startsWith('moz-extension://') ||
+        url.startsWith('chrome://') ||
+        url.startsWith('about:');
+
+      chrome.tabs.query({ active: true }, (tabs) => {
+        if (tabs && tabs.length > 0) {
+          const webTab = tabs.find((t) => t.active && !isExtensionUrl(t.url));
+          if (webTab) {
+            resolve(webTab);
+            return;
+          }
+        }
+
+        chrome.tabs.query({ lastFocusedWindow: true }, (lastTabs) => {
+          const webTab = lastTabs ? lastTabs.find((t) => !isExtensionUrl(t.url)) : null;
+          if (webTab) {
+            resolve(webTab);
+            return;
+          }
+
+          chrome.tabs.query({}, (allTabs) => {
+            const webTab = allTabs ? allTabs.find((t) => !isExtensionUrl(t.url)) : null;
+            resolve(webTab || (tabs ? tabs[0] : null));
+          });
+        });
+      });
+    });
+  };
+
+  const fetchStorageData = async () => {
     setLoading(true);
     setLoadingStep('Verbindung zu aktivem Browser-Tab wird hergestellt...');
 
     if (typeof chrome !== 'undefined' && chrome.tabs) {
-      chrome.tabs.query({ active: true, currentWindow: true }, (tabs) => {
-        const active = tabs[0];
-        if (active?.url) {
-          setCurrentUrl(active.url);
-          setCurrentTitle(active.title || 'Page');
+      const active = await getTargetWebTab();
+      if (active?.url) {
+        setCurrentUrl(active.url);
+        setCurrentTitle(active.title || 'Page');
 
           const predictionsRes = predictPagePresets({
             url: active.url,
@@ -221,8 +259,7 @@ export default function App() {
           setCurrentUrl('https://example.com');
           setLoading(false);
         }
-      });
-    } else {
+      } else {
       setCurrentUrl('https://localhost:3000');
       const fallbackLocal = [
         { key: 'session_token', value: 'bearer_xyz_9981' },
@@ -245,38 +282,36 @@ export default function App() {
     }
   };
 
-  const handleApplyPreset = (preset: PredictedPreset) => {
+  const handleApplyPreset = async (preset: PredictedPreset) => {
     const newItems = Object.entries(preset.entries).map(([key, value]) => ({ key, value }));
 
     if (typeof chrome !== 'undefined' && chrome.tabs) {
-      chrome.tabs.query({ active: true, currentWindow: true }, (tabs) => {
-        const activeId = tabs[0]?.id;
-        if (activeId) {
-          newItems.forEach((item) => {
-            chrome.tabs.sendMessage(activeId, { type: 'SET_LOCAL_STORAGE', key: item.key, value: item.value });
-          });
-          fetchStorageData();
-        }
-      });
+      const tab = await getTargetWebTab();
+      const activeId = tab?.id;
+      if (activeId) {
+        newItems.forEach((item) => {
+          chrome.tabs.sendMessage(activeId, { type: 'SET_LOCAL_STORAGE', key: item.key, value: item.value });
+        });
+        fetchStorageData();
+      }
     } else {
       setItems(newItems);
     }
   };
 
-  const handleGenerateSelectiveSeed = () => {
+  const handleGenerateSelectiveSeed = async () => {
     const seedRecords = generateSelectiveSeedData(selectedTemplate, seedCount);
     const newItems = seedRecords.map((r) => ({ key: r.key, value: r.value }));
 
     if (typeof chrome !== 'undefined' && chrome.tabs) {
-      chrome.tabs.query({ active: true, currentWindow: true }, (tabs) => {
-        const activeId = tabs[0]?.id;
-        if (activeId) {
-          newItems.forEach((item) => {
-            chrome.tabs.sendMessage(activeId, { type: 'SET_LOCAL_STORAGE', key: item.key, value: item.value });
-          });
-          fetchStorageData();
-        }
-      });
+      const tab = await getTargetWebTab();
+      const activeId = tab?.id;
+      if (activeId) {
+        newItems.forEach((item) => {
+          chrome.tabs.sendMessage(activeId, { type: 'SET_LOCAL_STORAGE', key: item.key, value: item.value });
+        });
+        fetchStorageData();
+      }
     } else {
       setItems(newItems);
     }
@@ -291,8 +326,8 @@ export default function App() {
 
   const handleUpdateStorageEntry = async (key: string, newValue: string) => {
     try {
-      if (typeof chrome !== 'undefined' && chrome.tabs?.query) {
-        const [tab] = await chrome.tabs.query({ active: true, currentWindow: true });
+      if (typeof chrome !== 'undefined' && chrome.tabs) {
+        const tab = await getTargetWebTab();
         if (tab?.id) {
           if (storageType === 'cookie' || storageType === 'cookies') {
             if (chrome.cookies) {
@@ -381,8 +416,8 @@ export default function App() {
 
   const handleDeleteStorageEntry = async (key: string) => {
     try {
-      if (typeof chrome !== 'undefined' && chrome.tabs?.query) {
-        const [tab] = await chrome.tabs.query({ active: true, currentWindow: true });
+      if (typeof chrome !== 'undefined' && chrome.tabs) {
+        const tab = await getTargetWebTab();
         if (tab?.id) {
           if (storageType === 'cookie' || storageType === 'cookies') {
             if (chrome.cookies) {
