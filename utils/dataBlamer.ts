@@ -289,5 +289,6 @@ export function getStorageDataBlame(key: string, currentValue: string, rawStack?
     lastModifiedAt: new Date().toISOString(),
     actor: fallbackActor,
     revisionCount: 1,
+    historyTimeline: [],
   };
 }

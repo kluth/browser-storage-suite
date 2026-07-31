@@ -1158,8 +1158,8 @@ export default function MermaidTopologyDiagram({ entries, currentUrl = 'https://
               transform={`translate(${pos.x}, ${pos.y})`}
               onDoubleClick={() => setFocusedPath([eng.name])}
               style={{ cursor: 'pointer' }}
-              title="Doppelklick: Unter-Mermaid-Diagramm für diese Engine öffnen!"
             >
+              <title>Doppelklick: Unter-Mermaid-Diagramm für diese Engine öffnen!</title>
               <rect x="-70" y="-24" width="140" height="48" rx="8" fill="#1e293b" stroke={eng.color} strokeWidth="2" filter="url(#glow)" />
               <text y="-4" textAnchor="middle" fill="#f8fafc" fontSize="11" fontWeight="bold">
                 {eng.icon} {eng.name}

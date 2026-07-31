@@ -68,6 +68,7 @@ export function generateExplodingChildNodes(
     const demoLinks: GraphLink[] = demoChildren.map((child) => ({
       source: targetEngine,
       target: child.id,
+      strength: 1.0,
     }));
 
     return {
@@ -86,6 +87,7 @@ export function generateExplodingChildNodes(
   const childLinks: GraphLink[] = childNodes.map((child) => ({
     source: targetEngine,
     target: child.id,
+    strength: 1.0,
   }));
 
   return {

@@ -378,7 +378,7 @@ export default function App() {
         fetchStorageData();
       }
     } else {
-      setItems(newItems);
+      setLocalItems(newItems);
     }
   };
 
@@ -396,7 +396,7 @@ export default function App() {
         fetchStorageData();
       }
     } else {
-      setItems(newItems);
+      setLocalItems(newItems);
     }
   };
 
@@ -412,7 +412,7 @@ export default function App() {
       if (typeof chrome !== 'undefined' && chrome.tabs) {
         const tab = await getTargetWebTab();
         if (tab?.id) {
-          if (storageType === 'cookie' || storageType === 'cookies') {
+          if (storageType === 'cookies') {
             if (chrome.cookies) {
               await chrome.cookies.set({
                 url: tab.url || currentUrl,
@@ -502,7 +502,7 @@ export default function App() {
       if (typeof chrome !== 'undefined' && chrome.tabs) {
         const tab = await getTargetWebTab();
         if (tab?.id) {
-          if (storageType === 'cookie' || storageType === 'cookies') {
+          if (storageType === 'cookies') {
             if (chrome.cookies) {
               await chrome.cookies.remove({
                 url: tab.url || currentUrl,
