@@ -10,9 +10,9 @@ on:
     inputs:
       publish_stores:
         description: 'Publish automatically to Chrome Web Store and Firefox AMO'
-        required: true
+        required: false
         type: boolean
-        default: true
+        default: false
 
 jobs:
   # ---------------------------------------------------------------
@@ -76,12 +76,12 @@ jobs:
           path: .output/*.zip
 
   # ---------------------------------------------------------------
-  # 3. Create GitHub Release on Tag / Dispatch
+  # 3. Create GitHub Release on Tag
   # ---------------------------------------------------------------
   github-release:
     name: 🚀 Create GitHub Release
     needs: build-and-pack
-    if: startsWith(github.ref, 'refs/tags/v') || github.event.inputs.publish_stores == 'true'
+    if: startsWith(github.ref, 'refs/tags/v')
     runs-on: ubuntu-latest
     permissions:
       contents: write
@@ -106,12 +106,12 @@ jobs:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
 
   # ---------------------------------------------------------------
-  # 4. Auto-Publish to Chrome Web Store
+  # 4. Publish to Chrome Web Store (Safe Credentials Verification)
   # ---------------------------------------------------------------
   publish-chrome:
     name: 🛒 Publish to Chrome Web Store
     needs: build-and-pack
-    if: (startsWith(github.ref, 'refs/tags/v') || github.event.inputs.publish_stores == 'true') && secrets.CHROME_CLIENT_ID != ''
+    if: startsWith(github.ref, 'refs/tags/v') || github.event.inputs.publish_stores == true
     runs-on: ubuntu-latest
     steps:
       - name: Checkout Repository
@@ -127,7 +127,12 @@ jobs:
         run: npm ci
 
       - name: Build & Submit to Chrome Web Store via WXT
-        run: npx wxt submit
+        run: |
+          if [ -z "${{ secrets.CHROME_CLIENT_ID }}" ]; then
+            echo "⚠️ CHROME_CLIENT_ID secret is missing or not configured. Skipping Chrome Web Store submission."
+            exit 0
+          fi
+          npx wxt submit
         env:
           CHROME_EXTENSION_ID: ${{ secrets.CHROME_EXTENSION_ID }}
           CHROME_CLIENT_ID: ${{ secrets.CHROME_CLIENT_ID }}
@@ -135,12 +140,12 @@ jobs:
           CHROME_REFRESH_TOKEN: ${{ secrets.CHROME_REFRESH_TOKEN }}
 
   # ---------------------------------------------------------------
-  # 5. Auto-Publish to Firefox Add-ons Store (AMO)
+  # 5. Publish to Firefox Add-ons Store (Safe Credentials Verification)
   # ---------------------------------------------------------------
   publish-firefox:
     name: 🦊 Publish to Firefox Add-ons (AMO)
     needs: build-and-pack
-    if: (startsWith(github.ref, 'refs/tags/v') || github.event.inputs.publish_stores == 'true') && secrets.FIREFOX_JWT_ISSUER != ''
+    if: startsWith(github.ref, 'refs/tags/v') || github.event.inputs.publish_stores == true
     runs-on: ubuntu-latest
     steps:
       - name: Checkout Repository
@@ -156,7 +161,12 @@ jobs:
         run: npm ci
 
       - name: Build & Submit to Firefox AMO via WXT
-        run: npx wxt submit -b firefox
+        run: |
+          if [ -z "${{ secrets.FIREFOX_JWT_ISSUER }}" ]; then
+            echo "⚠️ FIREFOX_JWT_ISSUER secret is missing or not configured. Skipping Firefox AMO submission."
+            exit 0
+          fi
+          npx wxt submit -b firefox
         env:
           FIREFOX_EXTENSION_ID: ${{ secrets.FIREFOX_EXTENSION_ID }}
           FIREFOX_JWT_ISSUER: ${{ secrets.FIREFOX_JWT_ISSUER }}
