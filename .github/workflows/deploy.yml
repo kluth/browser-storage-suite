@@ -41,7 +41,7 @@ jobs:
         run: npm test
 
   # ---------------------------------------------------------------
-  # 2. Build & Zip Chrome MV3 & Firefox MV2 Bundles
+  # 2. Build & Zip Chrome MV3, Firefox MV2, and Edge MV3 Bundles
   # ---------------------------------------------------------------
   build-and-pack:
     name: 📦 Build & Package Extension Zips
@@ -66,10 +66,13 @@ jobs:
       - name: Build & Zip Firefox Extension (MV2)
         run: npm run zip:firefox
 
-      - name: Upload Chrome Zip Artifact
+      - name: Build & Zip Edge Extension (MV3)
+        run: npm run zip:edge
+
+      - name: Upload Extension Zip Artifacts
         uses: actions/upload-artifact@v4
         with:
-          name: chrome-extension-zip
+          name: extension-dist-zips
           path: .output/*.zip
 
   # ---------------------------------------------------------------
@@ -89,7 +92,7 @@ jobs:
       - name: Download Build Artifacts
         uses: actions/download-artifact@v4
         with:
-          name: chrome-extension-zip
+          name: extension-dist-zips
           path: ./dist-release
 
       - name: Create GitHub Release & Upload Assets

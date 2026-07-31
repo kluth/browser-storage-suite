@@ -1,0 +1,60 @@
+name: CI Quality Gate & Mutation Suite
+
+on:
+  push:
+    branches:
+      - develop
+      - 'feature/*'
+  pull_request:
+    branches:
+      - main
+      - develop
+
+jobs:
+  typecheck-and-test:
+    name: 🧪 TypeCheck & Vitest Suite
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout Repository
+        uses: actions/checkout@v4
+
+      - name: Setup Node.js 20
+        uses: actions/setup-node@v4
+        with:
+          node-version: 20
+          cache: 'npm'
+
+      - name: Install Dependencies
+        run: npm ci
+
+      - name: TypeScript TypeCheck
+        run: npm run compile
+
+      - name: Run Vitest Unit & E2E Suite
+        run: npm test
+
+  build-verification:
+    name: 📦 Extension Cross-Browser Build Verification
+    needs: typecheck-and-test
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout Repository
+        uses: actions/checkout@v4
+
+      - name: Setup Node.js 20
+        uses: actions/setup-node@v4
+        with:
+          node-version: 20
+          cache: 'npm'
+
+      - name: Install Dependencies
+        run: npm ci
+
+      - name: Build Chrome MV3 Extension
+        run: npm run build
+
+      - name: Build Firefox MV2 Extension
+        run: npm run build:firefox
+
+      - name: Build Edge MV3 Extension
+        run: npm run build:edge

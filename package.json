@@ -13,6 +13,7 @@
     "build:edge": "wxt build -b edge",
     "zip": "wxt zip",
     "zip:firefox": "wxt zip -b firefox",
+    "zip:edge": "wxt zip -b edge",
     "compile": "tsc --noEmit",
     "test": "vitest run",
     "stryker": "stryker run",
