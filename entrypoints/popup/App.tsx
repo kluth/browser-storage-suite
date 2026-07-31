@@ -1,5 +1,5 @@
 import React, { useState, useEffect, lazy, Suspense } from 'react';
-import { Database, Cookie, HardDrive, Trash2, RefreshCw, Box, Table, Search, Terminal, Settings as SettingsIcon, Zap, AlertTriangle, CheckCircle, Info, Code, FileText, ChevronDown, ChevronRight, UserCheck, Clock, GitCommit, Bookmark, Play, ExternalLink, Loader2, Sparkles, Server, PlusCircle, Copy, Check, Bot, Globe, Network } from 'lucide-react';
+import { Database, Cookie, HardDrive, Trash2, RefreshCw, Box, Table, Search, Terminal, Settings as SettingsIcon, Zap, AlertTriangle, CheckCircle, Info, Code, FileText, ChevronDown, ChevronRight, UserCheck, Clock, GitCommit, Bookmark, Play, ExternalLink, Loader2, Sparkles, Server, PlusCircle, Copy, Check, Bot, Globe, Network, Download } from 'lucide-react';
 import { getCookiesForTab, deleteCookie } from '@/utils/browserApi';
 import VirtualizedDataGrid, { GridRow } from '@/components/VirtualizedDataGrid';
 import { generateSelectiveSeedData, SeedTemplate } from '@/utils/dataSeeder';
@@ -8,6 +8,7 @@ import { analyzeStoragePerformance, PerformanceQuotaMetrics } from '@/utils/perf
 import { getStorageDataBlame, DataBlameInfo } from '@/utils/dataBlamer';
 import { predictPagePresets, PredictedPreset } from '@/utils/presetPredictor';
 import { probeBackendEndpoint, DiscoveredBackend } from '@/utils/backendDiscoverer';
+import { generateStandaloneMockServer, generateStorageExportBundle } from '@/utils/mockServerGenerator';
 
 // Static imports for 3D Canvas & Mermaid Diagram to eliminate extension popup chunk-loading stalls
 import SpatialGraphCanvas from '@/components/SpatialGraphCanvas';
@@ -68,9 +69,91 @@ export default function App() {
   const [loading, setLoading] = useState<boolean>(true);
   const [loadingStep, setLoadingStep] = useState<string>('Verbindung zu aktivem Tab wird hergestellt...');
 
-  // Active guide subtab for OpenAPI vs MCP
-  const [guideSubTab, setGuideSubTab] = useState<'openapi' | 'mcp'>('openapi');
+  // Active guide subtab for OpenAPI vs MCP vs Mock Server
+  const [guideSubTab, setGuideSubTab] = useState<'openapi' | 'mcp' | 'mock'>('openapi');
   const [copiedSnippet, setCopiedSnippet] = useState<string | null>(null);
+
+  const handleDownloadMockServer = () => {
+    const localMap: Record<string, string> = {};
+    localItems.forEach((item) => { localMap[item.key] = item.value; });
+    const sessionMap: Record<string, string> = {};
+    sessionItems.forEach((item) => { sessionMap[item.key] = item.value; });
+    const cookieMap: Record<string, string> = {};
+    cookies.forEach((c) => { cookieMap[c.name] = c.value; });
+
+    let host = 'localhost';
+    try {
+      if (currentUrl) host = new URL(currentUrl).hostname || 'localhost';
+    } catch {
+      host = 'localhost';
+    }
+
+    const res = generateStandaloneMockServer({
+      domain: host,
+      storageData: {
+        localStorage: localMap,
+        sessionStorage: sessionMap,
+        cookies: cookieMap,
+        indexedDB: {},
+      },
+      discoveredBackend: discoveredBackend || undefined,
+    });
+
+    if (res.ok) {
+      const blob = new Blob([res.value.serverCode], { type: 'text/javascript' });
+      const url = URL.createObjectURL(blob);
+      const a = document.createElement('a');
+      a.href = url;
+      a.download = res.value.filename;
+      document.body.appendChild(a);
+      a.click();
+      document.body.removeChild(a);
+      URL.revokeObjectURL(url);
+      showToast(`⚡ Standalone Mock Server (${res.value.filename}) heruntergeladen!`);
+    } else {
+      showToast(`Fehler beim Erstellen des Mock-Servers: ${res.error.message}`, 'error');
+    }
+  };
+
+  const handleDownloadExportJson = () => {
+    const localMap: Record<string, string> = {};
+    localItems.forEach((item) => { localMap[item.key] = item.value; });
+    const sessionMap: Record<string, string> = {};
+    sessionItems.forEach((item) => { sessionMap[item.key] = item.value; });
+    const cookieMap: Record<string, string> = {};
+    cookies.forEach((c) => { cookieMap[c.name] = c.value; });
+
+    let host = 'localhost';
+    try {
+      if (currentUrl) host = new URL(currentUrl).hostname || 'localhost';
+    } catch {
+      host = 'localhost';
+    }
+
+    const bundle = generateStorageExportBundle(
+      host,
+      {
+        localStorage: localMap,
+        sessionStorage: sessionMap,
+        cookies: cookieMap,
+        indexedDB: {},
+      },
+      predictedPresets || [],
+      discoveredBackend || undefined
+    );
+
+    const blob = new Blob([JSON.stringify(bundle, null, 2)], { type: 'application/json' });
+    const url = URL.createObjectURL(blob);
+    const a = document.createElement('a');
+    a.href = url;
+    const cleanHost = host.replace(/[^a-zA-Z0-9]/g, '_');
+    a.download = `browser-storage-export-${cleanHost}.json`;
+    document.body.appendChild(a);
+    a.click();
+    document.body.removeChild(a);
+    URL.revokeObjectURL(url);
+    showToast(`📦 Speicher-Export (browser-storage-export-${cleanHost}.json) heruntergeladen!`);
+  };
 
   // Expandable Data Blame state per key
   const [expandedBlameKeys, setExpandedBlameKeys] = useState<Record<string, boolean>>({});
@@ -515,6 +598,35 @@ export default function App() {
     sizeBytes: new Blob([item.key + item.value]).size,
   }));
 
+  const mockServerCodePreview = useMemo(() => {
+    const localMap: Record<string, string> = {};
+    localItems.forEach((item) => { localMap[item.key] = item.value; });
+    const sessionMap: Record<string, string> = {};
+    sessionItems.forEach((item) => { sessionMap[item.key] = item.value; });
+    const cookieMap: Record<string, string> = {};
+    cookies.forEach((c) => { cookieMap[c.name] = c.value; });
+
+    let host = 'localhost';
+    try {
+      if (currentUrl) host = new URL(currentUrl).hostname || 'localhost';
+    } catch {
+      host = 'localhost';
+    }
+
+    const res = generateStandaloneMockServer({
+      domain: host,
+      storageData: {
+        localStorage: localMap,
+        sessionStorage: sessionMap,
+        cookies: cookieMap,
+        indexedDB: {},
+      },
+      discoveredBackend: discoveredBackend || undefined,
+    });
+
+    return res.ok ? res.value.serverCode : '// Error generating mock server code';
+  }, [localItems, sessionItems, cookies, currentUrl, discoveredBackend]);
+
   const mcpConfigCode = JSON.stringify(
     {
       mcpServers: {
@@ -546,6 +658,22 @@ console.log('LocalStorage State:', data);`;
           </div>
         </div>
         <div style={{ display: 'flex', gap: 6, alignItems: 'center' }}>
+          <button
+            className="action-btn"
+            title="⚡ Download Standalone Node.js Mock Server (mock-server.js)"
+            onClick={handleDownloadMockServer}
+            style={{ color: '#10b981', display: 'flex', alignItems: 'center', gap: 4, fontSize: 11, padding: '3px 8px', borderRadius: 4, background: 'rgba(16, 185, 129, 0.1)', border: '1px solid rgba(16, 185, 129, 0.3)', fontWeight: 600, cursor: 'pointer' }}
+          >
+            <Download size={12} /> Mock Server
+          </button>
+          <button
+            className="action-btn"
+            title="📦 Export Storage State & Schemas (JSON)"
+            onClick={handleDownloadExportJson}
+            style={{ color: '#38bdf8', display: 'flex', alignItems: 'center', gap: 4, fontSize: 11, padding: '3px 8px', borderRadius: 4, background: 'rgba(56, 189, 248, 0.1)', border: '1px solid rgba(56, 189, 248, 0.3)', fontWeight: 600, cursor: 'pointer' }}
+          >
+            <Download size={12} /> Export JSON
+          </button>
           <button
             className="action-btn"
             title="Detach Window (Open as Standalone Desktop Window)"
@@ -1299,6 +1427,13 @@ console.log('LocalStorage State:', data);`;
               >
                 <Bot size={13} /> MCP Server (für KI-Agenten)
               </button>
+              <button
+                className={`tab-btn ${guideSubTab === 'mock' ? 'active' : ''}`}
+                style={{ padding: '4px 10px', fontSize: 11, gap: 4 }}
+                onClick={() => setGuideSubTab('mock')}
+              >
+                <Server size={13} /> ⚡ Out-of-the-Box Mock Server (Download)
+              </button>
             </div>
 
             {/* OpenAPI REST Guide Subtab */}
@@ -1365,6 +1500,50 @@ console.log('LocalStorage State:', data);`;
                 </div>
                 <div style={{ background: '#030712', padding: 8, borderRadius: 6, border: '1px solid #1e293b' }}>
                   <HighlightedCodeSpan text={mcpConfigCode} showLineNumbers={true} />
+                </div>
+              </div>
+            )}
+
+            {/* Standalone Mock Server Downloader Subtab */}
+            {guideSubTab === 'mock' && (
+              <div style={{ display: 'flex', flexDirection: 'column', gap: 10, fontSize: 11, color: '#cbd5e1' }}>
+                <div style={{ background: 'rgba(16, 185, 129, 0.08)', padding: 10, borderRadius: 6, border: '1px solid rgba(16, 185, 129, 0.3)' }}>
+                  <div style={{ fontWeight: 700, fontSize: 12, color: '#10b981', display: 'flex', alignItems: 'center', gap: 6 }}>
+                    <Server size={15} /> Zero-Dependency Standalone Node.js Mock Server Generator
+                  </div>
+                  <div style={{ fontSize: 11, color: '#94a3b8', marginTop: 4 }}>
+                    Generiert einen sofort auf deinem Rechner ausführbaren Node.js HTTP Mock-Server. Enthält CORS-Header, alle aktiven Speicher-Einträge und automatische Route-Mocks für entdeckte Backend-Endpunkte.
+                  </div>
+                  <div style={{ display: 'flex', gap: 8, marginTop: 10, flexWrap: 'wrap' }}>
+                    <button
+                      className="action-btn"
+                      onClick={handleDownloadMockServer}
+                      style={{ background: '#10b981', color: '#030712', fontWeight: 700, fontSize: 11, padding: '6px 12px', borderRadius: 4, display: 'flex', alignItems: 'center', gap: 6, cursor: 'pointer' }}
+                    >
+                      <Download size={13} /> ⚡ Download Mock Server (mock-server.js)
+                    </button>
+                    <button
+                      className="action-btn"
+                      onClick={handleDownloadExportJson}
+                      style={{ background: 'rgba(56, 189, 248, 0.15)', color: '#38bdf8', border: '1px solid #38bdf8', fontWeight: 700, fontSize: 11, padding: '6px 12px', borderRadius: 4, display: 'flex', alignItems: 'center', gap: 6, cursor: 'pointer' }}
+                    >
+                      <Download size={13} /> 📦 Export Everything (browser-storage-export.json)
+                    </button>
+                  </div>
+                </div>
+
+                <div style={{ fontWeight: 600, color: '#38bdf8', display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
+                  <span>Vorschau: Generierter Node.js Mock-Server Code</span>
+                  <button
+                    className="action-btn"
+                    onClick={() => copyCodeSnippet('mock_server', mockServerCodePreview)}
+                    style={{ fontSize: 10, color: copiedSnippet === 'mock_server' ? '#10b981' : '#38bdf8' }}
+                  >
+                    {copiedSnippet === 'mock_server' ? <Check size={12} /> : <Copy size={12} />} Copy Code
+                  </button>
+                </div>
+                <div style={{ background: '#030712', padding: 8, borderRadius: 6, border: '1px solid #1e293b', maxHeight: 220, overflowY: 'auto' }}>
+                  <HighlightedCodeSpan text={mockServerCodePreview} showLineNumbers={true} />
                 </div>
               </div>
             )}
