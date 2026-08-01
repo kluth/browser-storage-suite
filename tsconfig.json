@@ -23,6 +23,7 @@
     "tests/cryptoManager.test.ts",
     "tests/realtimeDiffEngine.test.ts",
     "tests/crossBrowserBridge.test.ts",
+    "tests/storageEventBus.test.ts",
     "wxt.config.ts",
     ".wxt/wxt.d.ts"
   ]
