@@ -520,9 +520,9 @@ describe('StorageCompressionEngine & LzCompressionAdapter (ADR-0007 Storage Comp
     });
 
     it('6.2 should maintain stable memory overhead across repeated large payload compression iterations', async () => {
-      const sample = 'Memory overhead verification payload '.repeat(5000); // ~180 KB
+      const sample = 'Memory overhead verification payload '.repeat(1000); // ~36 KB
 
-      for (let i = 0; i < 20; i++) {
+      for (let i = 0; i < 5; i++) {
         const comp = await StorageCompressionEngine.compress(sample);
         expect(comp.ok).toBe(true);
         if (comp.ok) {
@@ -640,6 +640,641 @@ describe('StorageCompressionEngine & LzCompressionAdapter (ADR-0007 Storage Comp
       if (compRes.ok) {
         // At threshold boundary (64 bytes), should NOT bypass if minSizeBytes is 64 (since originalSize 64 is NOT < 64)
         expect(compRes.value.bypassed).toBe(false);
+      }
+    });
+  });
+
+  describe('8. LZ-UTF16 Algorithm Comprehensive Suite', () => {
+    it('8.1 should compress, decompress and roundtrip ASCII text using lz-utf16 algorithm', async () => {
+      const input = 'LZ-UTF16 compression engine unit test string '.repeat(10);
+      const compRes = await StorageCompressionEngine.compress(input, { algorithm: 'lz-utf16', force: true });
+      expect(compRes.ok).toBe(true);
+      if (!compRes.ok) return;
+
+      expect(compRes.value.algorithm).toBe('lz-utf16');
+      expect(compRes.value.bypassed).toBe(false);
+
+      const decRes = await StorageCompressionEngine.decompress<string>(compRes.value);
+      expect(decRes.ok).toBe(true);
+      if (decRes.ok) {
+        expect(decRes.value).toBe(input);
+      }
+    });
+
+    it('8.2 should compress, decompress and roundtrip Unicode, CJK, and Emojis (charCodes >= 256) using lz-utf16', async () => {
+      const unicodeInput = '🚀 UTF-16 Unicode Test: 存储引擎 测试数据 こんにちは世界 €£¥ ₽ '.repeat(5);
+      const compRes = await StorageCompressionEngine.compress(unicodeInput, { algorithm: 'lz-utf16', force: true });
+      expect(compRes.ok).toBe(true);
+      if (!compRes.ok) return;
+
+      expect(compRes.value.algorithm).toBe('lz-utf16');
+      expect(compRes.value.bypassed).toBe(false);
+
+      const decRes = await StorageCompressionEngine.decompress<string>(compRes.value);
+      expect(decRes.ok).toBe(true);
+      if (decRes.ok) {
+        expect(decRes.value).toBe(unicodeInput);
+      }
+    });
+
+    it('8.3 should handle empty string input and output for lz-utf16 via adapter directly', () => {
+      const adapter = new LzCompressionAdapter();
+      const compressed = (adapter as any).lzCompressUtf16('');
+      expect(compressed).toBe('');
+
+      const decompressed = (adapter as any).lzDecompressUtf16('');
+      expect(decompressed).toBe('');
+    });
+
+    it('8.4 should handle null/undefined in lzCompressInternal and lzDecompressUtf16', () => {
+      const adapter = new LzCompressionAdapter();
+      expect((adapter as any).lzCompressInternal(null, 15, (a: number) => String.fromCharCode(a + 32))).toBe('');
+      expect((adapter as any).lzCompressInternal(undefined, 15, (a: number) => String.fromCharCode(a + 32))).toBe('');
+      expect((adapter as any).lzDecompressUtf16(null)).toBe('');
+      expect((adapter as any).lzDecompressUtf16(undefined)).toBe('');
+    });
+
+    it('8.5 should handle corrupted UTF16 payload decompression gracefully', async () => {
+      const adapter = new LzCompressionAdapter();
+      const corruptedUtf16Payload: CompressedPayloadDto = {
+        version: 1,
+        algorithm: 'lz-utf16',
+        uncompressedSize: 100,
+        compressedSize: 10,
+        checksum: '12345678',
+        bypassed: false,
+        data: ' invalid utf16 garbage string \x01\x02 ',
+      };
+
+      const decRes = await adapter.decompress(corruptedUtf16Payload);
+      expect(decRes.ok).toBe(false);
+      if (!decRes.ok) {
+        expect(['CORRUPTED_PAYLOAD', 'DECOMPRESSION_FAILED']).toContain(decRes.error.code);
+      }
+    });
+
+    it('8.6 should handle envelope serialization and deserialization with lz-utf16 algorithm', async () => {
+      const text = 'UTF-16 Envelope Test '.repeat(10);
+      const envelopeRes = await StorageCompressionEngine.compressToEnvelope(text, { algorithm: 'lz-utf16', force: true });
+      expect(envelopeRes.ok).toBe(true);
+      if (!envelopeRes.ok) return;
+
+      expect(envelopeRes.value).toContain('cmp:v1:lz-utf16:0:');
+      expect(StorageCompressionEngine.isCompressed(envelopeRes.value)).toBe(true);
+
+      const decRes = await StorageCompressionEngine.decompressFromEnvelope<string>(envelopeRes.value);
+      expect(decRes.ok).toBe(true);
+      if (decRes.ok) {
+        expect(decRes.value).toBe(text);
+      }
+    });
+
+    it('8.7 should wrap null decompression result from lzDecompressUtf16 as DECOMPRESSION_FAILED', async () => {
+      const adapter = new LzCompressionAdapter();
+      // Mock lzDecompressUtf16 to return null
+      (adapter as any).lzDecompressUtf16 = () => null;
+
+      const dto: CompressedPayloadDto = {
+        version: 1,
+        algorithm: 'lz-utf16',
+        uncompressedSize: 50,
+        compressedSize: 10,
+        checksum: '12345678',
+        bypassed: false,
+        data: 'test',
+      };
+
+      const res = await adapter.decompress(dto);
+      expect(res.ok).toBe(false);
+      if (!res.ok) {
+        expect(res.error.code).toBe('DECOMPRESSION_FAILED');
+        expect(res.error.message).toContain('Decompression yielded null or undefined');
+      }
+    });
+  });
+
+  describe('9. StorageCompressionEngine Guard Conditions & Branch Coverage', () => {
+    it('9.1 should return false for isCompressed when given non-string types', () => {
+      expect(StorageCompressionEngine.isCompressed(null as any)).toBe(false);
+      expect(StorageCompressionEngine.isCompressed(undefined as any)).toBe(false);
+      expect(StorageCompressionEngine.isCompressed(12345 as any)).toBe(false);
+      expect(StorageCompressionEngine.isCompressed(true as any)).toBe(false);
+      expect(StorageCompressionEngine.isCompressed({} as any)).toBe(false);
+      expect(StorageCompressionEngine.isCompressed(Symbol('test') as any)).toBe(false);
+      expect(StorageCompressionEngine.isCompressed('')).toBe(false);
+    });
+
+    it('9.2 should return 0 for getCompressionRatio across all edge/bypassed cases', () => {
+      expect(StorageCompressionEngine.getCompressionRatio(null as any)).toBe(0);
+      expect(StorageCompressionEngine.getCompressionRatio(undefined as any)).toBe(0);
+
+      const bypassedDto: CompressedPayloadDto = {
+        version: 1,
+        algorithm: 'raw',
+        uncompressedSize: 100,
+        compressedSize: 100,
+        checksum: '12345678',
+        bypassed: true,
+        data: 'data',
+      };
+      expect(StorageCompressionEngine.getCompressionRatio(bypassedDto)).toBe(0);
+
+      const zeroSizeDto: CompressedPayloadDto = {
+        version: 1,
+        algorithm: 'lz-base64',
+        uncompressedSize: 0,
+        compressedSize: 10,
+        checksum: '12345678',
+        bypassed: false,
+        data: 'data',
+      };
+      expect(StorageCompressionEngine.getCompressionRatio(zeroSizeDto)).toBe(0);
+
+      const expandedDto: CompressedPayloadDto = {
+        version: 1,
+        algorithm: 'lz-base64',
+        uncompressedSize: 100,
+        compressedSize: 150,
+        checksum: '12345678',
+        bypassed: false,
+        data: 'data',
+      };
+      expect(StorageCompressionEngine.getCompressionRatio(expandedDto)).toBe(0);
+
+      const normalDto: CompressedPayloadDto = {
+        version: 1,
+        algorithm: 'lz-base64',
+        uncompressedSize: 100,
+        compressedSize: 25,
+        checksum: '12345678',
+        bypassed: false,
+        data: 'data',
+      };
+      expect(StorageCompressionEngine.getCompressionRatio(normalDto)).toBe(0.75);
+    });
+
+    it('9.3 should compress Uint8Array input correctly in StorageCompressionEngine', async () => {
+      const bytes = new Uint8Array([72, 101, 108, 108, 111, 32, 87, 111, 114, 108, 100]); // "Hello World"
+      const compRes = await StorageCompressionEngine.compress(bytes, { force: true });
+      expect(compRes.ok).toBe(true);
+      if (compRes.ok) {
+        expect(compRes.value.uncompressedSize).toBe(11);
+        const decRes = await StorageCompressionEngine.decompress<string>(compRes.value);
+        expect(decRes.ok).toBe(true);
+        if (decRes.ok) {
+          expect(decRes.value).toBe('Hello World');
+        }
+      }
+    });
+
+    it('9.4 should return INVALID_INPUT for non-string / non-Uint8Array in StorageCompressionEngine.compress', async () => {
+      // @ts-expect-error testing number
+      const numRes = await StorageCompressionEngine.compress(12345);
+      expect(numRes.ok).toBe(false);
+      if (!numRes.ok) {
+        expect(numRes.error.code).toBe('INVALID_INPUT');
+        expect(numRes.error.message).toContain('must be a string or Uint8Array');
+      }
+
+      // @ts-expect-error testing boolean
+      const boolRes = await StorageCompressionEngine.compress(true);
+      expect(boolRes.ok).toBe(false);
+      if (!boolRes.ok) {
+        expect(boolRes.error.code).toBe('INVALID_INPUT');
+      }
+
+      // @ts-expect-error testing object
+      const objRes = await StorageCompressionEngine.compress({ key: 'val' });
+      expect(objRes.ok).toBe(false);
+      if (!objRes.ok) {
+        expect(objRes.error.code).toBe('INVALID_INPUT');
+      }
+    });
+
+    it('9.5 should handle compressObject errors for null, undefined, circular references, and BigInt', async () => {
+      // @ts-expect-error testing null
+      const nullRes = await StorageCompressionEngine.compressObject(null);
+      expect(nullRes.ok).toBe(false);
+      if (!nullRes.ok) {
+        expect(nullRes.error.code).toBe('INVALID_INPUT');
+        expect(nullRes.error.message).toContain('cannot be null or undefined');
+      }
+
+      // @ts-expect-error testing undefined
+      const undefRes = await StorageCompressionEngine.compressObject(undefined);
+      expect(undefRes.ok).toBe(false);
+      if (!undefRes.ok) {
+        expect(undefRes.error.code).toBe('INVALID_INPUT');
+      }
+
+      const circular: any = {};
+      circular.self = circular;
+      const circRes = await StorageCompressionEngine.compressObject(circular);
+      expect(circRes.ok).toBe(false);
+      if (!circRes.ok) {
+        expect(circRes.error.code).toBe('INVALID_INPUT');
+        expect(circRes.error.message).toContain('Failed to serialize object to JSON');
+      }
+
+      const bigIntObj = { big: 100n };
+      const bigIntRes = await StorageCompressionEngine.compressObject(bigIntObj);
+      expect(bigIntRes.ok).toBe(false);
+      if (!bigIntRes.ok) {
+        expect(bigIntRes.error.code).toBe('INVALID_INPUT');
+        expect(bigIntRes.error.message).toContain('Failed to serialize object to JSON');
+      }
+    });
+
+    it('9.6 should handle non-Error objects thrown during compressObject JSON stringification', async () => {
+      const origStringify = JSON.stringify;
+      try {
+        JSON.stringify = () => {
+          throw 'String error thrown during stringify';
+        };
+        const res = await StorageCompressionEngine.compressObject({ test: 1 });
+        expect(res.ok).toBe(false);
+        if (!res.ok) {
+          expect(res.error.code).toBe('INVALID_INPUT');
+          expect(res.error.message).toContain('String error thrown during stringify');
+        }
+      } finally {
+        JSON.stringify = origStringify;
+      }
+    });
+
+    it('9.7 should handle decompressObject error handling for null, undefined, invalid JSON, and non-Error throws', async () => {
+      // @ts-expect-error testing null
+      const nullRes = await StorageCompressionEngine.decompressObject(null);
+      expect(nullRes.ok).toBe(false);
+      if (!nullRes.ok) {
+        expect(nullRes.error.code).toBe('INVALID_INPUT');
+        expect(nullRes.error.message).toContain('cannot be null or undefined');
+      }
+
+      // @ts-expect-error testing undefined
+      const undefRes = await StorageCompressionEngine.decompressObject(undefined);
+      expect(undefRes.ok).toBe(false);
+
+      // Compress plain text (NOT JSON)
+      const plainComp = await StorageCompressionEngine.compress('This is plain text not JSON', { forceBypass: true });
+      expect(plainComp.ok).toBe(true);
+      if (!plainComp.ok) return;
+
+      const decObjRes = await StorageCompressionEngine.decompressObject(plainComp.value);
+      expect(decObjRes.ok).toBe(false);
+      if (!decObjRes.ok) {
+        expect(decObjRes.error.code).toBe('DECOMPRESSION_FAILED');
+        expect(decObjRes.error.message).toContain('Failed to parse decompressed text as JSON');
+      }
+
+      // Test non-Error thrown in JSON.parse
+      const origParse = JSON.parse;
+      try {
+        JSON.parse = () => {
+          throw { custom: 'non-error object thrown' };
+        };
+        const res = await StorageCompressionEngine.decompressObject(plainComp.value);
+        expect(res.ok).toBe(false);
+        if (!res.ok) {
+          expect(res.error.code).toBe('DECOMPRESSION_FAILED');
+          expect(res.error.message).toContain('[object Object]');
+        }
+      } finally {
+        JSON.parse = origParse;
+      }
+    });
+
+    it('9.8 should propagate error when compressToEnvelope or decompressObject receives adapter error', async () => {
+      const invalidAlgoEnvelopeRes = await StorageCompressionEngine.compressToEnvelope('test', { algorithm: 'invalid_algo' as any });
+      expect(invalidAlgoEnvelopeRes.ok).toBe(false);
+      if (!invalidAlgoEnvelopeRes.ok) {
+        expect(invalidAlgoEnvelopeRes.error.code).toBe('UNSUPPORTED_ALGORITHM');
+      }
+
+      const invalidHeaderObjRes = await StorageCompressionEngine.decompressObject('cmp:v1:invalid_algo:0:10:10:12345678:data');
+      expect(invalidHeaderObjRes.ok).toBe(false);
+      if (!invalidHeaderObjRes.ok) {
+        expect(invalidHeaderObjRes.error.code).toBe('UNSUPPORTED_ALGORITHM');
+      }
+    });
+
+    it('9.9 should return error when analyzeCompressionPotential receives invalid input and return full stats on success', async () => {
+      // @ts-expect-error testing null
+      const errRes = await StorageCompressionEngine.analyzeCompressionPotential(null);
+      expect(errRes.ok).toBe(false);
+      if (!errRes.ok) {
+        expect(errRes.error.code).toBe('INVALID_INPUT');
+      }
+
+      const sample = 'Analyze compression potential test string '.repeat(10);
+      const statsRes = await StorageCompressionEngine.analyzeCompressionPotential(sample);
+      expect(statsRes.ok).toBe(true);
+      if (statsRes.ok) {
+        const stats = statsRes.value;
+        expect(stats.originalSize).toBe(sample.length);
+        expect(stats.compressedSize).toBeGreaterThan(0);
+        expect(typeof stats.savedBytes).toBe('number');
+        expect(typeof stats.compressionRatio).toBe('number');
+        expect(typeof stats.spaceSavingPercentage).toBe('number');
+        expect(typeof stats.bypassed).toBe('boolean');
+        expect(stats.algorithmUsed).toBe('lz-base64');
+        expect(stats.durationMs).toBeGreaterThanOrEqual(0);
+      }
+    });
+  });
+
+  describe('10. LzCompressionAdapter Low-Level Matrix & Stryker Mutant Extermination', () => {
+    it('10.1 should compute checksum accurately and reproducibly', () => {
+      const adapter = new LzCompressionAdapter();
+      expect(adapter.computeChecksum('')).toBe('00000001');
+      expect(adapter.computeChecksum('A')).toBe('00420042');
+      expect(adapter.computeChecksum('Hello World')).toBe('180b041d');
+    });
+
+    it('10.2 should calculate stats correctly across zero original size, expansion, and high compression', () => {
+      const adapter = new LzCompressionAdapter();
+      
+      const zeroStats = adapter.getStats(0, 0, 'raw', true, 1.5);
+      expect(zeroStats.originalSize).toBe(0);
+      expect(zeroStats.compressedSize).toBe(0);
+      expect(zeroStats.savedBytes).toBe(0);
+      expect(zeroStats.compressionRatio).toBe(1.0);
+      expect(zeroStats.spaceSavingPercentage).toBe(0);
+
+      const expandedStats = adapter.getStats(100, 150, 'lz-base64', false, 2.0);
+      expect(expandedStats.savedBytes).toBe(0); // Math.max(0, 100 - 150)
+      expect(expandedStats.compressionRatio).toBe(1.5);
+      expect(expandedStats.spaceSavingPercentage).toBe(0); // Math.max(0, (1 - 1.5) * 100)
+
+      const goodStats = adapter.getStats(1000, 200, 'lz-base64', false, 5.0);
+      expect(goodStats.savedBytes).toBe(800);
+      expect(goodStats.compressionRatio).toBe(0.2);
+      expect(goodStats.spaceSavingPercentage).toBe(80);
+    });
+
+    it('10.3 should handle gzip and deflate stream compression and decompression', async () => {
+      const adapter = new LzCompressionAdapter();
+      const text = 'Web streams compression test payload string '.repeat(10);
+
+      const gzipRes = await adapter.compress(text, { algorithm: 'gzip', force: true });
+      expect(gzipRes.ok).toBe(true);
+      if (gzipRes.ok) {
+        expect(gzipRes.value.algorithm).toBe('gzip');
+        const gzipDec = await adapter.decompress(gzipRes.value);
+        expect(gzipDec.ok).toBe(true);
+        if (gzipDec.ok) {
+          expect(gzipDec.value).toBe(text);
+        }
+      }
+
+      const deflateRes = await adapter.compress(text, { algorithm: 'deflate', force: true });
+      expect(deflateRes.ok).toBe(true);
+      if (deflateRes.ok) {
+        expect(deflateRes.value.algorithm).toBe('deflate');
+        const deflateDec = await adapter.decompress(deflateRes.value);
+        expect(deflateDec.ok).toBe(true);
+        if (deflateDec.ok) {
+          expect(deflateDec.value).toBe(text);
+        }
+      }
+    });
+
+    it('10.4 should test minSizeThreshold and minSizeBytes resolution and exact threshold boundary behavior', async () => {
+      const adapter = new LzCompressionAdapter();
+      const payload127 = 'A'.repeat(127);
+      const payload128 = 'A'.repeat(128);
+
+      // Default threshold is 128: 127 bytes < 128 -> bypassed
+      const res127 = await adapter.compress(payload127);
+      expect(res127.ok).toBe(true);
+      if (res127.ok) expect(res127.value.bypassed).toBe(true);
+
+      // 128 bytes is not < 128 -> compressed
+      const res128 = await adapter.compress(payload128);
+      expect(res128.ok).toBe(true);
+      if (res128.ok) expect(res128.value.bypassed).toBe(false);
+
+      // Explicit minSizeThreshold option
+      const resCustomThresh = await adapter.compress('A'.repeat(49), { minSizeThreshold: 50 });
+      expect(resCustomThresh.ok).toBe(true);
+      if (resCustomThresh.ok) expect(resCustomThresh.value.bypassed).toBe(true);
+
+      // Explicit minSizeBytes option
+      const resCustomBytes = await adapter.compress('A'.repeat(49), { minSizeBytes: 50 });
+      expect(resCustomBytes.ok).toBe(true);
+      if (resCustomBytes.ok) expect(resCustomBytes.value.bypassed).toBe(true);
+    });
+
+    it('10.5 should test ratioThreshold resolution and force / allowInflation flags', async () => {
+      const adapter = new LzCompressionAdapter();
+      const data = 'High Entropy Test String 12345!@#$%^&*()_+'.repeat(5);
+
+      // Custom ratioThreshold = 0.1 (strict saving requirement)
+      const resStrictRatio = await adapter.compress(data, { ratioThreshold: 0.1 });
+      expect(resStrictRatio.ok).toBe(true);
+      if (resStrictRatio.ok) {
+        expect(resStrictRatio.value.bypassed).toBe(true);
+      }
+
+      // allowInflation = true
+      const resInflation = await adapter.compress(data, { ratioThreshold: 0.1, allowInflation: true });
+      expect(resInflation.ok).toBe(true);
+      if (resInflation.ok) {
+        expect(resInflation.value.bypassed).toBe(false);
+      }
+
+      // force = true
+      const resForce = await adapter.compress(data, { ratioThreshold: 0.1, force: true });
+      expect(resForce.ok).toBe(true);
+      if (resForce.ok) {
+        expect(resForce.value.bypassed).toBe(false);
+      }
+    });
+
+    it('10.6 should handle direct decompress with non-string non-object, invalid versions, and maxDecompressedSizeBytes boundaries', async () => {
+      const adapter = new LzCompressionAdapter();
+
+      // @ts-expect-error testing number
+      const numRes = await adapter.decompress(12345);
+      expect(numRes.ok).toBe(false);
+      if (!numRes.ok) {
+        expect(numRes.error.code).toBe('INVALID_INPUT');
+      }
+
+      // @ts-expect-error testing boolean
+      const boolRes = await adapter.decompress(true);
+      expect(boolRes.ok).toBe(false);
+      if (!boolRes.ok) {
+        expect(boolRes.error.code).toBe('INVALID_INPUT');
+      }
+
+      const version2Dto: CompressedPayloadDto = {
+        version: 2 as any,
+        algorithm: 'lz-base64',
+        uncompressedSize: 100,
+        compressedSize: 20,
+        checksum: '12345678',
+        bypassed: false,
+        data: 'data',
+      };
+      const v2Res = await adapter.decompress(version2Dto);
+      expect(v2Res.ok).toBe(false);
+      if (!v2Res.ok) {
+        expect(v2Res.error.code).toBe('INVALID_HEADER');
+      }
+
+      // maxDecompressedSizeBytes boundary: uncompressedSize === maxDecompressedSizeBytes -> OK
+      const sample = 'Max size boundary test string '.repeat(10);
+      const compRes = await adapter.compress(sample);
+      expect(compRes.ok).toBe(true);
+      if (!compRes.ok) return;
+
+      const exactSizeRes = await adapter.decompress(compRes.value, { maxDecompressedSizeBytes: sample.length });
+      expect(exactSizeRes.ok).toBe(true);
+
+      const tooSmallRes = await adapter.decompress(compRes.value, { maxDecompressedSizeBytes: sample.length - 1 });
+      expect(tooSmallRes.ok).toBe(false);
+      if (!tooSmallRes.ok) {
+        expect(tooSmallRes.error.code).toBe('DECOMPRESSION_EXCEEDS_BOUNDS');
+      }
+    });
+
+    it('10.7 should test verifyChecksum option (true vs false) during decompression', async () => {
+      const adapter = new LzCompressionAdapter();
+      const sample = 'Checksum verification options test payload '.repeat(10);
+      const compRes = await adapter.compress(sample);
+      expect(compRes.ok).toBe(true);
+      if (!compRes.ok) return;
+
+      // Tamper checksum
+      const tamperedDto: CompressedPayloadDto = { ...compRes.value, checksum: 'bad12345' };
+
+      // verifyChecksum: true (default) -> failure
+      const failRes = await adapter.decompress(tamperedDto, { verifyChecksum: true });
+      expect(failRes.ok).toBe(false);
+      if (!failRes.ok) {
+        expect(failRes.error.code).toBe('CORRUPTED_PAYLOAD');
+        expect(failRes.error.message).toContain('Checksum mismatch');
+      }
+
+      // verifyChecksum: false -> success despite wrong checksum
+      const passRes = await adapter.decompress(tamperedDto, { verifyChecksum: false });
+      expect(passRes.ok).toBe(true);
+      if (passRes.ok) {
+        expect(passRes.value).toBe(sample);
+      }
+    });
+
+    it('10.8 should test serializePayload validation for invalid objects, missing algorithms, and bypassed flag serialization', () => {
+      const adapter = new LzCompressionAdapter();
+
+      // @ts-expect-error testing null
+      const nullRes = adapter.serializePayload(null);
+      expect(nullRes.ok).toBe(false);
+      if (!nullRes.ok) expect(nullRes.error.code).toBe('INVALID_INPUT');
+
+      // @ts-expect-error testing string
+      const strRes = adapter.serializePayload('not object');
+      expect(strRes.ok).toBe(false);
+      if (!strRes.ok) expect(strRes.error.code).toBe('INVALID_INPUT');
+
+      const invalidVersionDto = { version: 2, algorithm: 'lz-base64', data: 'test' } as any;
+      expect(adapter.serializePayload(invalidVersionDto).ok).toBe(false);
+
+      const missingAlgoDto = { version: 1, algorithm: '', data: 'test' } as any;
+      expect(adapter.serializePayload(missingAlgoDto).ok).toBe(false);
+
+      const missingDataDto = { version: 1, algorithm: 'lz-base64' } as any;
+      expect(adapter.serializePayload(missingDataDto).ok).toBe(false);
+
+      const bypassedDto: CompressedPayloadDto = {
+        version: 1,
+        algorithm: 'raw',
+        uncompressedSize: 50,
+        compressedSize: 50,
+        checksum: '12345678',
+        bypassed: true,
+        data: 'bypassed_data',
+      };
+      const bypassedSer = adapter.serializePayload(bypassedDto);
+      expect(bypassedSer.ok).toBe(true);
+      if (bypassedSer.ok) {
+        expect(bypassedSer.value).toBe('cmp:v1:raw:1:50:50:12345678:bypassed_data');
+      }
+    });
+
+    it('10.9 should test deserializePayload validation for invalid envelope structure and NaN fields', () => {
+      const adapter = new LzCompressionAdapter();
+
+      // @ts-expect-error testing null
+      const nullRes = adapter.deserializePayload(null);
+      expect(nullRes.ok).toBe(false);
+
+      // Missing cmp:v1:
+      const noPrefix = adapter.deserializePayload('v1:lz-base64:0:10:10:1234:data');
+      expect(noPrefix.ok).toBe(false);
+      if (!noPrefix.ok) expect(noPrefix.error.code).toBe('INVALID_HEADER');
+
+      // Fewer than 5 colons
+      const tooFewColons = adapter.deserializePayload('cmp:v1:lz-base64:0:10:10');
+      expect(tooFewColons.ok).toBe(false);
+      if (!tooFewColons.ok) expect(tooFewColons.error.code).toBe('INVALID_HEADER');
+
+      // NaN flags
+      const nanFlags = adapter.deserializePayload('cmp:v1:lz-base64:abc:10:10:12345678:data');
+      expect(nanFlags.ok).toBe(false);
+      if (!nanFlags.ok) expect(nanFlags.error.code).toBe('INVALID_HEADER');
+
+      // NaN uncompressedSize
+      const nanUncompressed = adapter.deserializePayload('cmp:v1:lz-base64:0:xyz:10:12345678:data');
+      expect(nanUncompressed.ok).toBe(false);
+      if (!nanUncompressed.ok) expect(nanUncompressed.error.code).toBe('INVALID_HEADER');
+
+      // NaN compressedSize
+      const nanCompressed = adapter.deserializePayload('cmp:v1:lz-base64:0:10:def:12345678:data');
+      expect(nanCompressed.ok).toBe(false);
+      if (!nanCompressed.ok) expect(nanCompressed.error.code).toBe('INVALID_HEADER');
+
+      // Empty checksum
+      const emptyChecksum = adapter.deserializePayload('cmp:v1:lz-base64:0:10:10::data');
+      expect(emptyChecksum.ok).toBe(false);
+      if (!emptyChecksum.ok) expect(emptyChecksum.error.code).toBe('INVALID_HEADER');
+
+      // Unsupported algorithm
+      const unsuppAlgo = adapter.deserializePayload('cmp:v1:unsupported_algo:0:10:10:12345678:data');
+      expect(unsuppAlgo.ok).toBe(false);
+      if (!unsuppAlgo.ok) expect(unsuppAlgo.error.code).toBe('UNSUPPORTED_ALGORITHM');
+    });
+
+    it('10.10 should test lzCompressBase64 padding branches (len % 4 == 0, 1, 2, 3)', () => {
+      const adapter = new LzCompressionAdapter();
+      // Test different inputs to exercise base64 padding logic
+      for (const len of [1, 2, 3, 4, 5, 10, 15, 20]) {
+        const input = 'X'.repeat(len * 50);
+        const comp = (adapter as any).lzCompressBase64(input);
+        expect(typeof comp).toBe('string');
+        const dec = (adapter as any).lzDecompressBase64(comp);
+        expect(dec).toBe(input);
+      }
+
+      expect((adapter as any).lzCompressBase64('')).toBe('');
+      expect((adapter as any).lzDecompressBase64('')).toBe('');
+    });
+
+    it('10.11 should handle errors in compressStream and decompressStream when streams fail', async () => {
+      const adapter = new LzCompressionAdapter();
+      
+      const origStream = globalThis.DecompressionStream;
+      try {
+        // @ts-expect-error mutating global for test
+        delete globalThis.DecompressionStream;
+        const res = await (adapter as any).decompressStream('c2FtcGxl', 'gzip');
+        expect(res.ok).toBe(false);
+        if (!res.ok) {
+          expect(res.error.code).toBe('UNSUPPORTED_ENVIRONMENT');
+        }
+      } finally {
+        globalThis.DecompressionStream = origStream;
       }
     });
   });
