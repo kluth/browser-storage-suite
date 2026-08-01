@@ -214,7 +214,7 @@ describe('CryptoManager & AesCryptoAdapter (ADR-0001 Storage Encryption at Rest)
         expect(err2.error.message).toBe('Invalid envelope format segments');
       }
 
-      const err3 = adapter.deserializePayload('enc:v1::empty:parts');
+      const err3 = adapter.deserializePayload('enc:v1:salt::ciphertext');
       expect(err3.ok).toBe(false);
       if (!err3.ok) {
         expect(err3.error.code).toBe('INVALID_PAYLOAD_FORMAT');
@@ -451,6 +451,248 @@ describe('CryptoManager & AesCryptoAdapter (ADR-0001 Storage Encryption at Rest)
       expect(resUndef.ok).toBe(false);
       if (!resUndef.ok) {
         expect(resUndef.error.code).toBe('INVALID_PAYLOAD_FORMAT');
+      }
+    });
+  });
+
+  describe('6. Browser Fallback & Error Handling Tests', () => {
+    it('6.1 should encrypt and decrypt using btoa/atob when Buffer is disabled for testing', async () => {
+      const adapter = new AesCryptoAdapter();
+      adapter.disableBufferForTesting = true;
+      const text = 'Browser fallback test string';
+      const encRes = await adapter.encrypt(text, samplePassphrase);
+      expect(encRes.ok).toBe(true);
+      if (encRes.ok) {
+        const decRes = await adapter.decrypt(encRes.value, samplePassphrase);
+        expect(decRes.ok).toBe(true);
+        if (decRes.ok) {
+          expect(decRes.value).toBe(text);
+        }
+      }
+    });
+
+    it('6.2 should return Result.err when subtleCrypto deriveKey fails', async () => {
+      const adapter = new AesCryptoAdapter();
+      const origSubtle = globalThis.crypto.subtle;
+      const mockSubtle = {
+        importKey: (...args: any[]) => origSubtle.importKey.apply(origSubtle, args as any),
+        deriveKey: async () => { throw new Error('Subtle deriveKey simulated failure'); },
+      };
+      Object.defineProperty(adapter, 'subtleCrypto', { get: () => mockSubtle, configurable: true });
+
+      const salt = new Uint8Array(16);
+      const res = await adapter.deriveKey(samplePassphrase, salt);
+      expect(res.ok).toBe(false);
+      if (!res.ok) {
+        expect(res.error.code).toBe('INVALID_KEY');
+        expect(res.error.message).toContain('Subtle deriveKey simulated failure');
+      }
+    });
+
+    it('6.3 should return Result.err when subtleCrypto encrypt fails', async () => {
+      const keyRes = await CryptoManager.generateKey();
+      if (!keyRes.ok) return;
+
+      const adapter = new AesCryptoAdapter();
+      const mockSubtle = {
+        encrypt: async () => { throw new Error('Subtle encrypt simulated failure'); },
+      };
+      Object.defineProperty(adapter, 'subtleCrypto', { get: () => mockSubtle, configurable: true });
+
+      const res = await adapter.encrypt('test', keyRes.value);
+      expect(res.ok).toBe(false);
+      if (!res.ok) {
+        expect(res.error.code).toBe('ENCRYPTION_FAILED');
+        expect(res.error.message).toContain('Subtle encrypt simulated failure');
+      }
+    });
+
+    it('6.4 should return Result.err when subtleCrypto generateKey fails', async () => {
+      const adapter = new AesCryptoAdapter();
+      const mockSubtle = {
+        generateKey: async () => { throw new Error('Subtle generateKey simulated failure'); },
+      };
+      Object.defineProperty(adapter, 'subtleCrypto', { get: () => mockSubtle, configurable: true });
+
+      const res = await adapter.generateKey();
+      expect(res.ok).toBe(false);
+      if (!res.ok) {
+        expect(res.error.code).toBe('ENCRYPTION_FAILED');
+        expect(res.error.message).toContain('Subtle generateKey simulated failure');
+      }
+    });
+
+    it('6.5 should handle empty salt envelope deserialization and decrypt with CryptoKey', async () => {
+      const keyRes = await CryptoManager.generateKey();
+      expect(keyRes.ok).toBe(true);
+      if (!keyRes.ok) return;
+
+      const adapter = new AesCryptoAdapter();
+      const encRes = await adapter.encrypt('direct key data', keyRes.value);
+      expect(encRes.ok).toBe(true);
+      if (!encRes.ok) return;
+
+      const serRes = adapter.serializePayload(encRes.value);
+      expect(serRes.ok).toBe(true);
+      if (!serRes.ok) return;
+
+      expect(serRes.value).toMatch(/^enc:v1::/);
+
+      const desRes = adapter.deserializePayload(serRes.value);
+      expect(desRes.ok).toBe(true);
+      if (desRes.ok) {
+        expect(desRes.value.salt).toBe('');
+      }
+
+      const decRes = await adapter.decrypt(serRes.value, keyRes.value);
+      expect(decRes.ok).toBe(true);
+      if (decRes.ok) {
+        expect(decRes.value).toBe('direct key data');
+      }
+    });
+
+    it('6.6 should return INVALID_KEY when decrypting empty salt payload with passphrase', async () => {
+      const keyRes = await CryptoManager.generateKey();
+      if (!keyRes.ok) return;
+      const adapter = new AesCryptoAdapter();
+      const encRes = await adapter.encrypt('direct key data', keyRes.value);
+      if (!encRes.ok) return;
+      const serRes = adapter.serializePayload(encRes.value);
+      if (!serRes.ok) return;
+
+      const decPassRes = await adapter.decrypt(serRes.value, samplePassphrase);
+      expect(decPassRes.ok).toBe(false);
+      if (!decPassRes.ok) {
+        expect(decPassRes.error.code).toBe('INVALID_KEY');
+      }
+    });
+  });
+
+  describe('7. High-Coverage Stryker Mutant Killer Suite', () => {
+    it('7.1 should handle UNSUPPORTED_ENVIRONMENT when crypto.subtle is missing', async () => {
+      const adapter = new AesCryptoAdapter();
+      const origCrypto = globalThis.crypto;
+      try {
+        Object.defineProperty(globalThis, 'crypto', {
+          value: { getRandomValues: origCrypto?.getRandomValues },
+          configurable: true,
+          writable: true,
+        });
+        const resKey = await adapter.generateKey();
+        expect(resKey.ok).toBe(false);
+        if (!resKey.ok) {
+          expect(resKey.error.code).toBe('UNSUPPORTED_ENVIRONMENT');
+        }
+      } finally {
+        Object.defineProperty(globalThis, 'crypto', {
+          value: origCrypto,
+          configurable: true,
+          writable: true,
+        });
+      }
+    });
+
+    it('7.2 should handle UNSUPPORTED_ENVIRONMENT when crypto.getRandomValues is missing', async () => {
+      const adapter = new AesCryptoAdapter();
+      const origCrypto = globalThis.crypto;
+      try {
+        Object.defineProperty(globalThis, 'crypto', {
+          value: { subtle: origCrypto?.subtle },
+          configurable: true,
+          writable: true,
+        });
+        const resEnc = await adapter.encrypt('test', samplePassphrase);
+        expect(resEnc.ok).toBe(false);
+        if (!resEnc.ok) {
+          expect(resEnc.error.code).toBe('UNSUPPORTED_ENVIRONMENT');
+        }
+      } finally {
+        Object.defineProperty(globalThis, 'crypto', {
+          value: origCrypto,
+          configurable: true,
+          writable: true,
+        });
+      }
+    });
+
+    it('7.3 should respect custom key derivation iterations option', async () => {
+      const salt = new Uint8Array(16);
+      const res = await CryptoManager.deriveKey(samplePassphrase, salt, { iterations: 1000 });
+      expect(res.ok).toBe(true);
+    });
+
+    it('7.4 should fail encrypt when plaintext is undefined', async () => {
+      const adapter = new AesCryptoAdapter();
+      // @ts-expect-error testing undefined input
+      const res = await adapter.encrypt(undefined, samplePassphrase);
+      expect(res.ok).toBe(false);
+      if (!res.ok) {
+        expect(res.error.code).toBe('ENCRYPTION_FAILED');
+      }
+    });
+
+    it('7.5 should fail decrypt when DTO is invalid object or missing version', async () => {
+      const adapter = new AesCryptoAdapter();
+      // @ts-expect-error invalid DTO
+      const res1 = await adapter.decrypt({}, samplePassphrase);
+      expect(res1.ok).toBe(false);
+      if (!res1.ok) {
+        expect(res1.error.code).toBe('INVALID_PAYLOAD_FORMAT');
+      }
+    });
+
+    it('7.6 should fail base64 decoding with INVALID_PAYLOAD_FORMAT when atob fails in browser fallback mode', async () => {
+      const adapter = new AesCryptoAdapter();
+      adapter.disableBufferForTesting = true;
+      const decRes = await adapter.decrypt('enc:v1:c2FsdA==:aXZp:!!!invalid_b64!!!', samplePassphrase);
+      expect(decRes.ok).toBe(false);
+      if (!decRes.ok) {
+        expect(decRes.error.code).toBe('INVALID_PAYLOAD_FORMAT');
+      }
+    });
+
+    it('7.7 should handle non-Error throw in deriveKey', async () => {
+      const adapter = new AesCryptoAdapter();
+      const mockSubtle = {
+        importKey: () => { throw 'String exception in deriveKey'; },
+      };
+      Object.defineProperty(adapter, 'subtleCrypto', { get: () => mockSubtle, configurable: true });
+      const res = await adapter.deriveKey('pass', new Uint8Array(16));
+      expect(res.ok).toBe(false);
+      if (!res.ok) {
+        expect(res.error.message).toContain('String exception in deriveKey');
+      }
+    });
+
+    it('7.8 should handle non-Error throw in encrypt', async () => {
+      const adapter = new AesCryptoAdapter();
+      const keyRes = await adapter.generateKey();
+      if (!keyRes.ok) return;
+      const mockSubtle = {
+        encrypt: () => { throw 'String exception in encrypt'; },
+      };
+      Object.defineProperty(adapter, 'subtleCrypto', { get: () => mockSubtle, configurable: true });
+      const res = await adapter.encrypt('test', keyRes.value);
+      expect(res.ok).toBe(false);
+      if (!res.ok) {
+        expect(res.error.message).toContain('String exception in encrypt');
+      }
+    });
+
+    it('7.9 should handle non-Error throw in decrypt', async () => {
+      const adapter = new AesCryptoAdapter();
+      const mockSubtle = {
+        decrypt: () => { throw 'String exception in decrypt'; },
+      };
+      Object.defineProperty(adapter, 'subtleCrypto', { get: () => mockSubtle, configurable: true });
+      const keyRes = await CryptoManager.generateKey();
+      if (!keyRes.ok) return;
+      const encRes = await adapter.encrypt('test', keyRes.value);
+      if (!encRes.ok) return;
+      const res = await adapter.decrypt(encRes.value, keyRes.value);
+      expect(res.ok).toBe(false);
+      if (!res.ok) {
+        expect(res.error.code).toBe('TAMPER_DETECTED');
       }
     });
   });
