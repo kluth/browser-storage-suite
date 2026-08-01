@@ -294,29 +294,13 @@ export class AesCryptoAdapter implements CryptoPort {
   }
 
   private uint8ArrayToBase64(bytes: Uint8Array): string {
-    if (typeof Buffer !== 'undefined') {
-      return Buffer.from(bytes).toString('base64');
-    }
-    let binary = '';
-    for (let i = 0; i < bytes.byteLength; i++) {
-      binary += String.fromCharCode(bytes[i]);
-    }
-    return btoa(binary);
+    return Buffer.from(bytes.buffer, bytes.byteOffset, bytes.byteLength).toString('base64');
   }
 
   private base64ToUint8Array(base64: string): Result<Uint8Array, CryptoError> {
     try {
-      if (typeof Buffer !== 'undefined') {
-        const buf = Buffer.from(base64, 'base64');
-        const bytes = new Uint8Array(buf.length);
-        bytes.set(buf);
-        return Result.ok(bytes);
-      }
-      const binary = atob(base64);
-      const bytes = new Uint8Array(binary.length);
-      for (let i = 0; i < binary.length; i++) {
-        bytes[i] = binary.charCodeAt(i);
-      }
+      const buf = Buffer.from(base64, 'base64');
+      const bytes = new Uint8Array(buf.buffer, buf.byteOffset, buf.byteLength);
       return Result.ok(bytes);
     } catch (err) {
       return Result.err(

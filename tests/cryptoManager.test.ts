@@ -2,6 +2,7 @@ import { describe, it, expect, beforeEach } from 'vitest';
 import { CryptoManager } from '../utils/cryptoManager';
 import { AesCryptoAdapter } from '../src/infrastructure/adapters/aesCryptoAdapter';
 import { CryptoError, EncryptedPayloadDto } from '../src/domain/ports/secondary/cryptoPort';
+import { Result } from '../utils/result';
 
 describe('CryptoManager & AesCryptoAdapter (ADR-0001 Storage Encryption at Rest)', () => {
   const samplePassphrase = 'super_secret_master_passphrase_2026';
@@ -174,6 +175,16 @@ describe('CryptoManager & AesCryptoAdapter (ADR-0001 Storage Encryption at Rest)
       expect(adapter.deserializePayload('not_an_envelope').ok).toBe(false);
       expect(adapter.deserializePayload('enc:v1:only_two_parts').ok).toBe(false);
       expect(adapter.deserializePayload('enc:v1::empty:parts').ok).toBe(false);
+      // @ts-expect-error runtime invalid parameter
+      expect(adapter.deserializePayload(null).ok).toBe(false);
+    });
+
+    it('3.4 should return Result.err when serializing invalid DTO', () => {
+      const adapter = new AesCryptoAdapter();
+      // @ts-expect-error invalid DTO
+      expect(adapter.serializePayload(null).ok).toBe(false);
+      // @ts-expect-error invalid version
+      expect(adapter.serializePayload({ version: 2 }).ok).toBe(false);
     });
   });
 
@@ -260,12 +271,24 @@ describe('CryptoManager & AesCryptoAdapter (ADR-0001 Storage Encryption at Rest)
       }
     });
 
-    it('5.2 should allow custom CryptoPort adapter injection in CryptoManager', async () => {
-      const mockAdapter: AesCryptoAdapter = new AesCryptoAdapter();
-      CryptoManager.setAdapter(mockAdapter);
+    it('5.2 should allow custom CryptoPort adapter injection in CryptoManager and reset it', async () => {
+      class CustomMockAdapter extends AesCryptoAdapter {
+        public override async generateKey() {
+          return Result.err(new CryptoError('ENCRYPTION_FAILED', 'Custom mock adapter error'));
+        }
+      }
+      const customAdapter = new CustomMockAdapter();
+      CryptoManager.setAdapter(customAdapter);
 
-      const encRes = await CryptoManager.encrypt('custom_adapter_test', samplePassphrase);
-      expect(encRes.ok).toBe(true);
+      const errKeyRes = await CryptoManager.generateKey();
+      expect(errKeyRes.ok).toBe(false);
+      if (!errKeyRes.ok) {
+        expect(errKeyRes.error.message).toContain('Custom mock adapter error');
+      }
+
+      CryptoManager.resetAdapter();
+      const validKeyRes = await CryptoManager.generateKey();
+      expect(validKeyRes.ok).toBe(true);
     });
 
     it('5.3 should re-encrypt multiple payloads during key rotation', async () => {
@@ -289,6 +312,36 @@ describe('CryptoManager & AesCryptoAdapter (ADR-0001 Storage Encryption at Rest)
           if (dec.ok) {
             expect(dec.value).toBe(items[i]);
           }
+        }
+      }
+    });
+
+    it('5.4 should propagate CryptoManager.encrypt failure when given invalid input', async () => {
+      // @ts-expect-error invalid input
+      const encRes = await CryptoManager.encrypt(null, samplePassphrase);
+      expect(encRes.ok).toBe(false);
+    });
+
+    it('5.5 should return error in rotateKeys when payload decryption fails', async () => {
+      const validEnc = await CryptoManager.encrypt('test data', samplePassphrase);
+      expect(validEnc.ok).toBe(true);
+      if (validEnc.ok) {
+        const rotateRes = await CryptoManager.rotateKeys([validEnc.value], 'wrong_passphrase', alternatePassphrase);
+        expect(rotateRes.ok).toBe(false);
+        if (!rotateRes.ok) {
+          expect(rotateRes.error.code).toBe('TAMPER_DETECTED');
+        }
+      }
+    });
+
+    it('5.6 should return error in rotateKeys when payload re-encryption fails', async () => {
+      const validEnc = await CryptoManager.encrypt('test data', samplePassphrase);
+      expect(validEnc.ok).toBe(true);
+      if (validEnc.ok) {
+        const rotateRes = await CryptoManager.rotateKeys([validEnc.value], samplePassphrase, '');
+        expect(rotateRes.ok).toBe(false);
+        if (!rotateRes.ok) {
+          expect(rotateRes.error.code).toBe('INVALID_PASSPHRASE');
         }
       }
     });
