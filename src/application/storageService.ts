@@ -15,6 +15,8 @@ export class StorageApplicationService implements StorageUseCasesPort {
     if (!keyRes.ok) return Result.err(keyRes.error);
 
     const valRes = StorageValue.create(rawValue);
+    if (!valRes.ok) return Result.err(valRes.error);
+
     return this.repositoryAdapter.saveEntry(target, keyRes.value, valRes.value);
   }
 
