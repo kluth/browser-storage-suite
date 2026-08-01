@@ -5,6 +5,7 @@
   "mutate": [
     "src/domain/**/*.ts",
     "src/application/**/*.ts",
+    "src/infrastructure/**/*.ts",
     "utils/**/*.ts",
     "!utils/browserApi.ts"
   ],
