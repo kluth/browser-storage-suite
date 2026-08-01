@@ -50,12 +50,14 @@ describe('CryptoManager & AesCryptoAdapter (ADR-0001 Storage Encryption at Rest)
       expect(emptyPassRes.ok).toBe(false);
       if (!emptyPassRes.ok) {
         expect(emptyPassRes.error.code).toBe('INVALID_PASSPHRASE');
+        expect(emptyPassRes.error.message).toBe('Passphrase cannot be empty');
       }
 
       const emptySaltRes = await CryptoManager.deriveKey(samplePassphrase, new Uint8Array(0));
       expect(emptySaltRes.ok).toBe(false);
       if (!emptySaltRes.ok) {
         expect(emptySaltRes.error.code).toBe('INVALID_KEY');
+        expect(emptySaltRes.error.message).toBe('Salt cannot be empty');
       }
     });
   });
@@ -174,6 +176,12 @@ describe('CryptoManager & AesCryptoAdapter (ADR-0001 Storage Encryption at Rest)
       expect(CryptoManager.isEncrypted('plaintext_unencrypted_string')).toBe(false);
       expect(CryptoManager.isEncrypted('enc:v2:invalidversion')).toBe(false);
       expect(CryptoManager.isEncrypted('')).toBe(false);
+      // @ts-expect-error testing non-string input
+      expect(CryptoManager.isEncrypted(null)).toBe(false);
+      // @ts-expect-error testing non-string object input
+      expect(CryptoManager.isEncrypted({ foo: 'bar' })).toBe(false);
+      // @ts-expect-error testing number input
+      expect(CryptoManager.isEncrypted(12345)).toBe(false);
     });
 
     it('3.2 should deserialize serialized string to EncryptedPayloadDto', () => {
@@ -192,19 +200,52 @@ describe('CryptoManager & AesCryptoAdapter (ADR-0001 Storage Encryption at Rest)
 
     it('3.3 should return Result.err when deserializing invalid formatted string', () => {
       const adapter = new AesCryptoAdapter();
-      expect(adapter.deserializePayload('not_an_envelope').ok).toBe(false);
-      expect(adapter.deserializePayload('enc:v1:only_two_parts').ok).toBe(false);
-      expect(adapter.deserializePayload('enc:v1::empty:parts').ok).toBe(false);
+      const err1 = adapter.deserializePayload('not_an_envelope');
+      expect(err1.ok).toBe(false);
+      if (!err1.ok) {
+        expect(err1.error.code).toBe('INVALID_PAYLOAD_FORMAT');
+        expect(err1.error.message).toBe('Missing encryption payload header prefix');
+      }
+
+      const err2 = adapter.deserializePayload('enc:v1:only_two_parts');
+      expect(err2.ok).toBe(false);
+      if (!err2.ok) {
+        expect(err2.error.code).toBe('INVALID_PAYLOAD_FORMAT');
+        expect(err2.error.message).toBe('Invalid envelope format segments');
+      }
+
+      const err3 = adapter.deserializePayload('enc:v1::empty:parts');
+      expect(err3.ok).toBe(false);
+      if (!err3.ok) {
+        expect(err3.error.code).toBe('INVALID_PAYLOAD_FORMAT');
+        expect(err3.error.message).toBe('Empty required envelope segment');
+      }
+
       // @ts-expect-error runtime invalid parameter
-      expect(adapter.deserializePayload(null).ok).toBe(false);
+      const errNull = adapter.deserializePayload(null);
+      expect(errNull.ok).toBe(false);
+      if (!errNull.ok) {
+        expect(errNull.error.code).toBe('INVALID_PAYLOAD_FORMAT');
+        expect(errNull.error.message).toBe('Serialized input must be a non-empty string');
+      }
     });
 
     it('3.4 should return Result.err when serializing invalid DTO', () => {
       const adapter = new AesCryptoAdapter();
       // @ts-expect-error invalid DTO
-      expect(adapter.serializePayload(null).ok).toBe(false);
+      const errNull = adapter.serializePayload(null);
+      expect(errNull.ok).toBe(false);
+      if (!errNull.ok) {
+        expect(errNull.error.code).toBe('INVALID_PAYLOAD_FORMAT');
+        expect(errNull.error.message).toBe('Invalid payload object for serialization');
+      }
+
       // @ts-expect-error invalid version
-      expect(adapter.serializePayload({ version: 2 }).ok).toBe(false);
+      const errVersion = adapter.serializePayload({ version: 2 });
+      expect(errVersion.ok).toBe(false);
+      if (!errVersion.ok) {
+        expect(errVersion.error.code).toBe('INVALID_PAYLOAD_FORMAT');
+      }
     });
   });
 
@@ -218,6 +259,7 @@ describe('CryptoManager & AesCryptoAdapter (ADR-0001 Storage Encryption at Rest)
       expect(decRes.ok).toBe(false);
       if (!decRes.ok) {
         expect(decRes.error.code).toBe('TAMPER_DETECTED');
+        expect(decRes.error.message).toBe('Decryption failed: corrupted ciphertext, tampered tag, or invalid key');
       }
     });
 
@@ -276,6 +318,7 @@ describe('CryptoManager & AesCryptoAdapter (ADR-0001 Storage Encryption at Rest)
       expect(decRes.ok).toBe(false);
       if (!decRes.ok) {
         expect(decRes.error.code).toBe('INVALID_PAYLOAD_FORMAT');
+        expect(decRes.error.message).toBe('Unsupported payload version');
       }
     });
   });
@@ -288,6 +331,7 @@ describe('CryptoManager & AesCryptoAdapter (ADR-0001 Storage Encryption at Rest)
       expect(res.ok).toBe(false);
       if (!res.ok) {
         expect(res.error).toBeInstanceOf(CryptoError);
+        expect(res.error.message).toBe('Plaintext cannot be null or undefined');
       }
     });
 
@@ -303,7 +347,7 @@ describe('CryptoManager & AesCryptoAdapter (ADR-0001 Storage Encryption at Rest)
       const errKeyRes = await CryptoManager.generateKey();
       expect(errKeyRes.ok).toBe(false);
       if (!errKeyRes.ok) {
-        expect(errKeyRes.error.message).toContain('Custom mock adapter error');
+        expect(errKeyRes.error.message).toBe('Custom mock adapter error');
       }
 
       CryptoManager.resetAdapter();
@@ -340,6 +384,9 @@ describe('CryptoManager & AesCryptoAdapter (ADR-0001 Storage Encryption at Rest)
       // @ts-expect-error invalid input
       const encRes = await CryptoManager.encrypt(null, samplePassphrase);
       expect(encRes.ok).toBe(false);
+      if (!encRes.ok) {
+        expect(encRes.error.code).toBe('ENCRYPTION_FAILED');
+      }
     });
 
     it('5.5 should return error in rotateKeys when payload decryption fails', async () => {
@@ -372,11 +419,22 @@ describe('CryptoManager & AesCryptoAdapter (ADR-0001 Storage Encryption at Rest)
       expect(resNull.ok).toBe(false);
       if (!resNull.ok) {
         expect(resNull.error.code).toBe('INVALID_PAYLOAD_FORMAT');
+        expect(resNull.error.message).toBe('Payloads array cannot be null or non-array');
       }
 
-      // @ts-expect-error testing runtime non-array input
+      // @ts-expect-error testing runtime non-array string input
       const resNotArray = await CryptoManager.rotateKeys('not_an_array', samplePassphrase, alternatePassphrase);
       expect(resNotArray.ok).toBe(false);
+      if (!resNotArray.ok) {
+        expect(resNotArray.error.code).toBe('INVALID_PAYLOAD_FORMAT');
+      }
+
+      // @ts-expect-error testing runtime non-array object input
+      const resObj = await CryptoManager.rotateKeys({ key: 'val' }, samplePassphrase, alternatePassphrase);
+      expect(resObj.ok).toBe(false);
+      if (!resObj.ok) {
+        expect(resObj.error.code).toBe('INVALID_PAYLOAD_FORMAT');
+      }
     });
 
     it('5.8 should return Result.err when decrypt is called with null or empty payload', async () => {
@@ -385,6 +443,14 @@ describe('CryptoManager & AesCryptoAdapter (ADR-0001 Storage Encryption at Rest)
       expect(resNull.ok).toBe(false);
       if (!resNull.ok) {
         expect(resNull.error.code).toBe('INVALID_PAYLOAD_FORMAT');
+        expect(resNull.error.message).toBe('Encrypted data cannot be null or undefined');
+      }
+
+      // @ts-expect-error testing runtime undefined input
+      const resUndef = await CryptoManager.decrypt(undefined, samplePassphrase);
+      expect(resUndef.ok).toBe(false);
+      if (!resUndef.ok) {
+        expect(resUndef.error.code).toBe('INVALID_PAYLOAD_FORMAT');
       }
     });
   });
