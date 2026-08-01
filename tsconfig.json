@@ -25,6 +25,8 @@
     "tests/crossBrowserBridge.test.ts",
     "tests/storageEventBus.test.ts",
     "tests/storageEventBus.stress.test.ts",
+    "tests/storageTestHarness.test.ts",
+    "tests/helpers/mockStorageEnvironment.ts",
     "wxt.config.ts",
     ".wxt/wxt.d.ts"
   ]
