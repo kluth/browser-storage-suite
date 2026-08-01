@@ -21,6 +21,7 @@
     "utils/**/*",
     "src/**/*",
     "tests/cryptoManager.test.ts",
+    "tests/realtimeDiffEngine.test.ts",
     "wxt.config.ts",
     ".wxt/wxt.d.ts"
   ]
