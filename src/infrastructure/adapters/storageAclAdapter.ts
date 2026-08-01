@@ -8,7 +8,7 @@ export class StorageAclAdapter implements StorageAclRepositoryPort {
 
   public async loadRules(): Promise<Result<AclRule[], StorageAclError>> {
     try {
-      return Result.ok(Array.from(this.rules.values()).map((r) => JSON.parse(JSON.stringify(r))));
+      return Result.ok(Array.from(this.rules.values()));
     } catch (err) {
       return Result.err(
         new StorageAclError(
@@ -27,7 +27,7 @@ export class StorageAclAdapter implements StorageAclRepositoryPort {
           new StorageAclError('INVALID_RULE', 'Rule must contain valid id and subjectOrRole')
         );
       }
-      this.rules.set(rule.id, JSON.parse(JSON.stringify(rule)));
+      this.rules.set(rule.id, { ...rule });
       return Result.ok(undefined);
     } catch (err) {
       return Result.err(
@@ -62,11 +62,7 @@ export class StorageAclAdapter implements StorageAclRepositoryPort {
 
   public async loadRoles(): Promise<Result<Map<string, AclRoleDefinition>, StorageAclError>> {
     try {
-      const clonedMap = new Map<string, AclRoleDefinition>();
-      for (const [k, v] of this.roles.entries()) {
-        clonedMap.set(k, JSON.parse(JSON.stringify(v)));
-      }
-      return Result.ok(clonedMap);
+      return Result.ok(new Map(this.roles));
     } catch (err) {
       return Result.err(
         new StorageAclError(
@@ -85,7 +81,7 @@ export class StorageAclAdapter implements StorageAclRepositoryPort {
           new StorageAclError('INVALID_RULE', 'Role definition must have a valid roleName')
         );
       }
-      this.roles.set(role.roleName, JSON.parse(JSON.stringify(role)));
+      this.roles.set(role.roleName, { ...role });
       return Result.ok(undefined);
     } catch (err) {
       return Result.err(
