@@ -14,8 +14,10 @@
 | **Total E2E Tests** | **333** | **69 test files** |
 
 ## ADR Feature Checklist (Features 0001 - 0025)
-| # | Feature | ADR Reference | Milestone Status | Tier 1 | Tier 2 | Tier 3 | Tier 4 |
-|---|---------|---------------|------------------|:------:|:------:|:------:|:------:|
+*Note: Dual Track architecture. ADR documents are generated incrementally when feature branches are created in Milestones M1-M4.*
+
+| # | Feature | Target ADR Reference (Planned in M1-M4) | Milestone Status | Tier 1 | Tier 2 | Tier 3 | Tier 4 |
+|---|---------|-----------------------------------------|------------------|:------:|:------:|:------:|:------:|
 | 1 | 0001: Storage Encryption at Rest | `docs/adr/0001-storage-encryption-at-rest.md` | `M1_IN_PROGRESS` | 6 | 5 | ✓ | ✓ |
 | 2 | 0002: Cross-Domain Sync Protocol | `docs/adr/0002-cross-domain-sync-protocol.md` | `M2_PLANNED` | 5 | 5 | ✓ | ✓ |
 | 3 | 0003: Real-Time Diff Engine | `docs/adr/0003-real-time-diff-engine.md` | `M1_IN_PROGRESS` | 6 | 5 | ✓ | ✓ |

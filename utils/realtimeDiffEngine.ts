@@ -228,23 +228,46 @@ export class RealtimeDiffEngine {
       const newObj = newState as Record<string, any>;
       const allRootKeys = Array.from(new Set([...Object.keys(oldObj), ...Object.keys(newObj)]));
 
+      const patchesByRootKey = new Map<string, JSONPatchOperation[]>();
+      for (const p of globalPatches) {
+        if (p.path.startsWith('/')) {
+          const slashIdx = p.path.indexOf('/', 1);
+          const escapedRoot = slashIdx === -1 ? p.path.slice(1) : p.path.slice(1, slashIdx);
+          const rootKey = unescapePointerToken(escapedRoot);
+          let list = patchesByRootKey.get(rootKey);
+          if (!list) {
+            list = [];
+            patchesByRootKey.set(rootKey, list);
+          }
+          list.push(p);
+        }
+      }
+
+      const inversePatchesByRootKey = new Map<string, JSONPatchOperation[]>();
+      for (const p of globalInversePatches) {
+        if (p.path.startsWith('/')) {
+          const slashIdx = p.path.indexOf('/', 1);
+          const escapedRoot = slashIdx === -1 ? p.path.slice(1) : p.path.slice(1, slashIdx);
+          const rootKey = unescapePointerToken(escapedRoot);
+          let list = inversePatchesByRootKey.get(rootKey);
+          if (!list) {
+            list = [];
+            inversePatchesByRootKey.set(rootKey, list);
+          }
+          list.push(p);
+        }
+      }
+
       for (const key of allRootKeys) {
         if (ignoreSet.has(key)) continue;
-
-        const escapedKey = escapePointerToken(key);
-        const rootPrefix = `/${escapedKey}`;
 
         const hasOld = key in oldObj;
         const hasNew = key in newObj;
 
         let changeType: DiffChangeType = 'unchanged';
 
-        const keyPatches = globalPatches.filter(
-          (p) => p.path === rootPrefix || p.path.startsWith(`${rootPrefix}/`)
-        );
-        const keyInversePatches = globalInversePatches.filter(
-          (p) => p.path === rootPrefix || p.path.startsWith(`${rootPrefix}/`)
-        );
+        const keyPatches = patchesByRootKey.get(key) || [];
+        const keyInversePatches = inversePatchesByRootKey.get(key) || [];
 
         if (!hasOld && hasNew) {
           changeType = 'created';

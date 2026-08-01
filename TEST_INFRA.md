@@ -5,8 +5,10 @@
 - Methodology: Category-Partition + Boundary Value Analysis (BVA) + Pairwise Combinatorial Testing + Real-World Workload Testing.
 
 ## Feature Inventory Matrix (Features 0001 - 0025)
-| # | Feature | Domain / Implementation Target | Source (Requirement) | Tier 1 | Tier 2 | Tier 3 | Tier 4 |
-|---|---------|-------------------------------|---------------------|:------:|:------:|:------:|:------:|
+*Note: Dual Track requirement-driven test infra. Modules are implemented incrementally across Milestones M1-M4.*
+
+| # | Feature | Target Module (Planned in M1-M4) | Source (Requirement) | Tier 1 | Tier 2 | Tier 3 | Tier 4 |
+|---|---------|----------------------------------|---------------------|:------:|:------:|:------:|:------:|
 | 1 | 0001: Storage Encryption at Rest | `utils/cryptoManager.ts`, `src/infrastructure/adapters/cryptoAdapter.ts` | ADR-0001 (M1) | 5 | 5 | ✓ | ✓ |
 | 2 | 0002: Cross-Domain Sync Protocol | `src/domain/model/crdt.ts`, `src/infrastructure/adapters/syncAdapter.ts` | ADR-0002 (M2) | 5 | 5 | ✓ | ✓ |
 | 3 | 0003: Real-Time Diff Engine | `utils/diffEngine.ts`, `src/application/diffService.ts` | ADR-0003 (M1) | 5 | 5 | ✓ | ✓ |
