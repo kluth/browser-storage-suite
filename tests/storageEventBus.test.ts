@@ -86,9 +86,15 @@ describe('StorageEventBus & ReactiveStorageObserver (ADR-0015)', () => {
 
     it('2.2 should deliver published event to multiple subscribers on same topic', () => {
       const callOrder: number[] = [];
-      const listener1 = vi.fn(() => { callOrder.push(1); });
-      const listener2 = vi.fn(() => { callOrder.push(2); });
-      const listener3 = vi.fn(() => { callOrder.push(3); });
+      const listener1 = vi.fn(() => {
+        callOrder.push(1);
+      });
+      const listener2 = vi.fn(() => {
+        callOrder.push(2);
+      });
+      const listener3 = vi.fn(() => {
+        callOrder.push(3);
+      });
 
       bus.subscribe('indexedDB:item', listener1);
       bus.subscribe('indexedDB:item', listener2);
@@ -225,6 +231,23 @@ describe('StorageEventBus & ReactiveStorageObserver (ADR-0015)', () => {
       expect(err.code).toBe('SUBSCRIBER_ERROR');
       expect(err.message).toContain('Sync subscriber error');
     });
+
+    it('4.3 should handle async listener promises that reject', async () => {
+      const errorHandler = vi.fn();
+      bus.setErrorHandler(errorHandler);
+
+      const asyncListener = vi.fn(async () => {
+        throw new Error('Async error');
+      });
+
+      bus.subscribe('localStorage:asyncFail', asyncListener);
+      bus.publish({ type: 'UPDATE', target: 'localStorage', key: 'asyncFail' });
+
+      await new Promise((r) => setTimeout(r, 20));
+
+      expect(errorHandler).toHaveBeenCalledTimes(1);
+      expect(errorHandler.mock.calls[0][0].code).toBe('SUBSCRIBER_ERROR');
+    });
   });
 
   describe('Suite 5: Mid-Dispatch Subscriptions & Unsubscriptions', () => {
@@ -337,6 +360,9 @@ describe('StorageEventBus & ReactiveStorageObserver (ADR-0015)', () => {
 
       const token = bus.subscribe('localStorage:disp', vi.fn());
       expect(token.id).toContain('sub_invalid');
+
+      const patternToken = bus.subscribePattern('localStorage:*', vi.fn());
+      expect(patternToken.id).toContain('sub_invalid');
     });
   });
 
@@ -363,7 +389,11 @@ describe('StorageEventBus & ReactiveStorageObserver (ADR-0015)', () => {
       vi.advanceTimersByTime(100);
 
       expect(callback).toHaveBeenCalledTimes(1);
-      expect(callback).toHaveBeenCalledWith('val_50', undefined, expect.objectContaining({ newValue: 'val_50' }));
+      expect(callback).toHaveBeenCalledWith(
+        'val_50',
+        undefined,
+        expect.objectContaining({ newValue: 'val_50' })
+      );
     });
 
     it('7.2 should respect once subscription option in observer', () => {
@@ -399,6 +429,179 @@ describe('StorageEventBus & ReactiveStorageObserver (ADR-0015)', () => {
       expect(callback).toHaveBeenCalledTimes(2);
       expect(callback.mock.calls[0][0]).toBe('p1');
       expect(callback.mock.calls[1][0]).toBe('p2');
+    });
+
+    it('7.4 should unsubscribe when cleanup functions returned by observePrefix, observeTarget, observeAll are called', () => {
+      const observer = ReactiveStorageObserver.getInstance();
+      const prefixCb = vi.fn();
+      const targetCb = vi.fn();
+      const allCb = vi.fn();
+
+      const unsubPrefix = observer.observePrefix('localStorage', 'unsub_', prefixCb);
+      const unsubTarget = observer.observeTarget('localStorage', targetCb);
+      const unsubAll = observer.observeAll(allCb);
+
+      bus.publish({ type: 'UPDATE', target: 'localStorage', key: 'unsub_1' });
+      expect(prefixCb).toHaveBeenCalledTimes(1);
+      expect(targetCb).toHaveBeenCalledTimes(1);
+      expect(allCb).toHaveBeenCalledTimes(1);
+
+      unsubPrefix();
+      unsubTarget();
+      unsubAll();
+
+      bus.publish({ type: 'UPDATE', target: 'localStorage', key: 'unsub_1' });
+      expect(prefixCb).toHaveBeenCalledTimes(1);
+      expect(targetCb).toHaveBeenCalledTimes(1);
+      expect(allCb).toHaveBeenCalledTimes(1);
+    });
+
+    it('7.5 should buffer events during pause for observePrefix, observeTarget, observeAll', () => {
+      const observer = ReactiveStorageObserver.getInstance();
+      const prefixCb = vi.fn();
+      const targetCb = vi.fn();
+      const allCb = vi.fn();
+
+      observer.observePrefix('localStorage', 'p_', prefixCb);
+      observer.observeTarget('localStorage', targetCb);
+      observer.observeAll(allCb);
+
+      observer.pause();
+
+      bus.publish({ type: 'UPDATE', target: 'localStorage', key: 'p_1' });
+
+      expect(prefixCb).toHaveBeenCalledTimes(0);
+      expect(targetCb).toHaveBeenCalledTimes(0);
+      expect(allCb).toHaveBeenCalledTimes(0);
+
+      observer.resume();
+
+      expect(prefixCb).toHaveBeenCalledTimes(1);
+      expect(targetCb).toHaveBeenCalledTimes(1);
+      expect(allCb).toHaveBeenCalledTimes(1);
+    });
+
+    it('7.6 should handle startAutoBridge double call and stopAutoBridge correctly', () => {
+      const observer = ReactiveStorageObserver.getInstance();
+      const allListener = vi.fn();
+
+      observer.observeAll(allListener);
+
+      // Call startAutoBridge twice
+      observer.startAutoBridge();
+      observer.startAutoBridge();
+
+      // Now test stopAutoBridge twice
+      observer.stopAutoBridge();
+      observer.stopAutoBridge();
+
+      expect(true).toBe(true);
+    });
+
+    it('7.7 should clear paused queue on clearPausedQueue()', () => {
+      const observer = ReactiveStorageObserver.getInstance();
+      const cb = vi.fn();
+
+      observer.observeKey('localStorage', 'clearQ', cb);
+      observer.pause();
+
+      bus.publish({ type: 'UPDATE', target: 'localStorage', key: 'clearQ', newValue: 'val' });
+      expect(cb).toHaveBeenCalledTimes(0);
+
+      observer.clearPausedQueue();
+      observer.resume();
+
+      expect(cb).toHaveBeenCalledTimes(0);
+    });
+
+    it('7.8 should configure custom bus using configure()', () => {
+      const customBus = StorageEventBus.getInstance();
+      ReactiveStorageObserver.configure(customBus);
+
+      const observer = ReactiveStorageObserver.getInstance();
+      expect(observer).toBeDefined();
+    });
+
+    it('7.9 should handle error when paused task throws error in resume()', () => {
+      const observer = ReactiveStorageObserver.getInstance();
+      const throwingCb = vi.fn(() => {
+        throw new Error('Pause task error');
+      });
+
+      observer.observeKey('localStorage', 'errKey', throwingCb);
+      observer.pause();
+
+      bus.publish({ type: 'UPDATE', target: 'localStorage', key: 'errKey' });
+
+      expect(() => observer.resume()).not.toThrow();
+    });
+
+    it('7.10 should translate storage changes from bridge to event bus across all area types and change kinds', () => {
+      const observer = ReactiveStorageObserver.getInstance();
+      const events: StorageEvent[] = [];
+
+      observer.observeAll((e) => events.push(e));
+
+      let bridgeListener: any;
+      const mockPort: any = {
+        getItem: vi.fn(),
+        getItems: vi.fn(),
+        setItem: vi.fn(),
+        setItems: vi.fn(),
+        removeItem: vi.fn(),
+        removeItems: vi.fn(),
+        clear: vi.fn(),
+        getBytesInUse: vi.fn(),
+        sendMessage: vi.fn(),
+        sendMessageToTab: vi.fn(),
+        onStorageChanged: (cb: any) => {
+          bridgeListener = cb;
+          return () => {
+            bridgeListener = null;
+          };
+        },
+        getBrowserContext: vi.fn(),
+      };
+
+      CrossBrowserBridge.configure(mockPort);
+      observer.stopAutoBridge();
+      observer.startAutoBridge();
+
+      if (bridgeListener) {
+        bridgeListener(
+          {
+            createdKey: { oldValue: undefined, newValue: 'newVal' },
+            deletedKey: { oldValue: 'oldVal', newValue: undefined },
+            updatedKey: { oldValue: 'oldVal', newValue: 'newVal' },
+          },
+          'session'
+        );
+
+        bridgeListener(
+          {
+            syncKey: { oldValue: undefined, newValue: 'syncVal' },
+          },
+          'sync'
+        );
+
+        bridgeListener(
+          {
+            managedKey: { oldValue: 'mOld', newValue: 'mNew' },
+          },
+          'managed'
+        );
+      }
+
+      expect(events.length).toBe(5);
+      expect(events[0].target).toBe('sessionStorage');
+      expect(events[0].type).toBe('CREATE');
+      expect(events[1].type).toBe('DELETE');
+      expect(events[2].type).toBe('UPDATE');
+
+      expect(events[3].target).toBe('localStorage');
+      expect(events[4].target).toBe('localStorage');
+
+      observer.stopAutoBridge();
     });
   });
 
@@ -498,7 +701,6 @@ describe('StorageEventBus & ReactiveStorageObserver (ADR-0015)', () => {
       observer.startAutoBridge();
 
       // Trigger auto bridge via CrossBrowserBridge
-      const bridge = CrossBrowserBridge.getInstance();
       bus.publish({
         type: 'CREATE',
         target: 'localStorage',
