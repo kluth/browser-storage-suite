@@ -1,10 +1,11 @@
-import { Result } from '../../../utils/result';
+import { Result } from '../../../../utils/result';
 import { StorageKey, StorageValue, StorageTarget } from '../../model/valueObjects';
 
 export interface StorageEntryDto {
   key: string;
   value: string;
   target: StorageTarget;
+  sizeInBytes?: number;
 }
 
 export interface StorageRepositoryPort {

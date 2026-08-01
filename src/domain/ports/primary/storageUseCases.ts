@@ -1,4 +1,4 @@
-import { Result } from '../../../utils/result';
+import { Result } from '../../../../utils/result';
 import { StorageTarget } from '../../model/valueObjects';
 import { StorageEntryDto } from '../secondary/storageRepositoryPort';
 

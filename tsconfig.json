@@ -19,6 +19,8 @@
     "entrypoints/**/*",
     "components/**/*",
     "utils/**/*",
+    "src/**/*",
+    "tests/cryptoManager.test.ts",
     "wxt.config.ts",
     ".wxt/wxt.d.ts"
   ]
