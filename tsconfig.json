@@ -24,6 +24,7 @@
     "tests/realtimeDiffEngine.test.ts",
     "tests/crossBrowserBridge.test.ts",
     "tests/storageEventBus.test.ts",
+    "tests/storageEventBus.stress.test.ts",
     "wxt.config.ts",
     ".wxt/wxt.d.ts"
   ]

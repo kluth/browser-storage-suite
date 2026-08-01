@@ -7,7 +7,8 @@ import {
   StorageEventError,
 } from '../src/domain/ports/primary/storageEventPort';
 import { CrossBrowserBridge } from '../utils/crossBrowserBridge';
-import { WxtBridgeAdapter } from '../src/infrastructure/adapters/wxtBridgeAdapter';
+import { ExtensionBridgePort } from '../src/domain/ports/secondary/extensionBridgePort';
+import { Result } from '../utils/result';
 
 describe('StorageEventBus & ReactiveStorageObserver (ADR-0015)', () => {
   let bus: StorageEventBus;
@@ -711,6 +712,360 @@ describe('StorageEventBus & ReactiveStorageObserver (ADR-0015)', () => {
       expect(allListener).toHaveBeenCalledTimes(1);
 
       observer.stopAutoBridge();
+    });
+  });
+
+  describe('Suite 11: Comprehensive Unsubscription Handles & Debounce Lifecycle', () => {
+    it('11.1 should unsubscribe handles returned by observeKey, observePrefix, observeTarget, observeAll', () => {
+      const observer = ReactiveStorageObserver.getInstance();
+      const keyCb = vi.fn();
+      const prefixCb = vi.fn();
+      const targetCb = vi.fn();
+      const allCb = vi.fn();
+
+      const unsubKey = observer.observeKey('localStorage', 'k1', keyCb);
+      const unsubPrefix = observer.observePrefix('localStorage', 'p_', prefixCb);
+      const unsubTarget = observer.observeTarget('sessionStorage', targetCb);
+      const unsubAll = observer.observeAll(allCb);
+
+      bus.publish({ type: 'UPDATE', target: 'localStorage', key: 'k1', newValue: 'v1' });
+      bus.publish({ type: 'UPDATE', target: 'localStorage', key: 'p_1', newValue: 'v2' });
+      bus.publish({ type: 'UPDATE', target: 'sessionStorage', key: 's1', newValue: 'v3' });
+
+      expect(keyCb).toHaveBeenCalledTimes(1);
+      expect(prefixCb).toHaveBeenCalledTimes(1);
+      expect(targetCb).toHaveBeenCalledTimes(1);
+      expect(allCb).toHaveBeenCalledTimes(3);
+
+      unsubKey();
+      unsubPrefix();
+      unsubTarget();
+      unsubAll();
+
+      bus.publish({ type: 'UPDATE', target: 'localStorage', key: 'k1', newValue: 'v11' });
+      bus.publish({ type: 'UPDATE', target: 'localStorage', key: 'p_1', newValue: 'v22' });
+      bus.publish({ type: 'UPDATE', target: 'sessionStorage', key: 's1', newValue: 'v33' });
+
+      expect(keyCb).toHaveBeenCalledTimes(1);
+      expect(prefixCb).toHaveBeenCalledTimes(1);
+      expect(targetCb).toHaveBeenCalledTimes(1);
+      expect(allCb).toHaveBeenCalledTimes(3);
+    });
+
+    it('11.2 should cancel pending debounce timer when unsubscribing before timer fires', () => {
+      vi.useFakeTimers();
+      const listener = vi.fn();
+      const token = bus.subscribe('localStorage:deb', listener, { debounceMs: 100 });
+
+      bus.publish({ type: 'UPDATE', target: 'localStorage', key: 'deb', newValue: 'val' });
+      expect(listener).not.toHaveBeenCalled();
+
+      token.unsubscribe();
+      vi.advanceTimersByTime(200);
+
+      expect(listener).not.toHaveBeenCalled();
+    });
+
+    it('11.3 should handle unsubscribing invalid or already removed tokens gracefully', () => {
+      expect(bus.unsubscribe('non_existent_id')).toBe(false);
+      expect(bus.unsubscribe({ id: '', topic: 't', unsubscribe: () => {} })).toBe(false);
+      expect(bus.unsubscribe(null as any)).toBe(false);
+    });
+  });
+
+  describe('Suite 12: Observer Pause Queue Edge Cases & Error Recovery', () => {
+    it('12.1 should clear paused queue on clearPausedQueue() without executing tasks', () => {
+      const observer = ReactiveStorageObserver.getInstance();
+      const callback = vi.fn();
+
+      observer.observeKey('localStorage', 'clearKey', callback);
+      observer.pause();
+
+      bus.publish({ type: 'UPDATE', target: 'localStorage', key: 'clearKey', newValue: 'a' });
+      bus.publish({ type: 'UPDATE', target: 'localStorage', key: 'clearKey', newValue: 'b' });
+
+      observer.clearPausedQueue();
+      observer.resume();
+
+      expect(callback).not.toHaveBeenCalled();
+    });
+
+    it('12.2 should recover gracefully when a paused task throws during resume()', () => {
+      const observer = ReactiveStorageObserver.getInstance();
+      const consoleSpy = vi.spyOn(console, 'error').mockImplementation(() => {});
+
+      const goodCb = vi.fn();
+      const badCb = vi.fn(() => {
+        throw new Error('Task execution error in resume');
+      });
+
+      observer.observeKey('localStorage', 'kBad', badCb);
+      observer.observeKey('localStorage', 'kGood', goodCb);
+
+      observer.pause();
+
+      bus.publish({ type: 'UPDATE', target: 'localStorage', key: 'kBad', newValue: 'bad' });
+      bus.publish({ type: 'UPDATE', target: 'localStorage', key: 'kGood', newValue: 'good' });
+
+      observer.resume();
+
+      expect(badCb).toHaveBeenCalledTimes(1);
+      expect(goodCb).toHaveBeenCalledTimes(1);
+      expect(consoleSpy).toHaveBeenCalledWith(
+        '[ReactiveStorageObserver] Error processing paused task:',
+        expect.any(Error)
+      );
+
+      consoleSpy.mockRestore();
+    });
+
+    it('12.3 should queue observePrefix, observeTarget, and observeAll callbacks when paused', () => {
+      const observer = ReactiveStorageObserver.getInstance();
+      const prefixCb = vi.fn();
+      const targetCb = vi.fn();
+      const allCb = vi.fn();
+
+      observer.observePrefix('localStorage', 'pre_', prefixCb);
+      observer.observeTarget('sessionStorage', targetCb);
+      observer.observeAll(allCb);
+
+      observer.pause();
+
+      bus.publish({ type: 'UPDATE', target: 'localStorage', key: 'pre_1', newValue: 'v1' });
+      bus.publish({ type: 'UPDATE', target: 'sessionStorage', key: 's1', newValue: 'v2' });
+
+      expect(prefixCb).not.toHaveBeenCalled();
+      expect(targetCb).not.toHaveBeenCalled();
+      expect(allCb).not.toHaveBeenCalled();
+
+      observer.resume();
+
+      expect(prefixCb).toHaveBeenCalledTimes(1);
+      expect(targetCb).toHaveBeenCalledTimes(1);
+      expect(allCb).toHaveBeenCalledTimes(2);
+    });
+  });
+
+  describe('Suite 13: Reactive Storage Observer Callbacks & Custom Configuration', () => {
+    it('13.1 should configure observer with custom StorageEventPort instance', () => {
+      const customBus = StorageEventBus.getInstance();
+      ReactiveStorageObserver.configure(customBus);
+      const observer = ReactiveStorageObserver.getInstance();
+
+      const callback = vi.fn();
+      observer.observeKey('localStorage', 'customKey', callback);
+
+      customBus.publish({ type: 'UPDATE', target: 'localStorage', key: 'customKey', newValue: 'cVal' });
+      expect(callback).toHaveBeenCalledWith('cVal', undefined, expect.objectContaining({ newValue: 'cVal' }));
+    });
+
+    it('13.2 should correctly pass (newValue, oldValue, event) to observeKey callback', () => {
+      const observer = ReactiveStorageObserver.getInstance();
+      const callback = vi.fn();
+
+      observer.observeKey<string>('localStorage', 'user', callback);
+
+      bus.publish<string>({
+        type: 'UPDATE',
+        target: 'localStorage',
+        key: 'user',
+        oldValue: 'alice',
+        newValue: 'bob',
+      });
+
+      expect(callback).toHaveBeenCalledTimes(1);
+      expect(callback).toHaveBeenCalledWith('bob', 'alice', expect.objectContaining({
+        type: 'UPDATE',
+        target: 'localStorage',
+        key: 'user',
+        oldValue: 'alice',
+        newValue: 'bob',
+      }));
+    });
+  });
+
+  describe('Suite 14: AutoBridge Lifecycle & Multi-Area Storage Mapping', () => {
+    it('14.1 should handle idempotent startAutoBridge calls without duplicating listeners', () => {
+      let registeredListenerCount = 0;
+      let registeredListener: ((changes: Record<string, any>, area: any) => void) | null = null;
+      const mockPort: ExtensionBridgePort = {
+        getBrowserContext: () => ({
+          vendor: 'chrome',
+          manifestVersion: 'mv3',
+          isExtensionContext: false,
+          supportedStorageAreas: ['local'],
+          hasSessionStorage: true,
+        }),
+        getItem: async () => Result.ok(null),
+        getItems: async () => Result.ok({} as any),
+        setItem: async () => Result.ok(undefined),
+        setItems: async () => Result.ok(undefined),
+        removeItem: async () => Result.ok(undefined),
+        removeItems: async () => Result.ok(undefined),
+        clear: async () => Result.ok(undefined),
+        getBytesInUse: async () => Result.ok(0),
+        sendMessage: async () => Result.ok(null as any),
+        sendMessageToTab: async () => Result.ok(null as any),
+        onStorageChanged: (l) => {
+          registeredListenerCount++;
+          registeredListener = l;
+          return () => {
+            registeredListener = null;
+          };
+        },
+      };
+
+      CrossBrowserBridge.configure(mockPort);
+      const observer = ReactiveStorageObserver.getInstance();
+      const allCb = vi.fn();
+      observer.observeAll(allCb);
+
+      observer.startAutoBridge();
+      observer.startAutoBridge(); // Second call should be no-op
+
+      expect(registeredListenerCount).toBe(1);
+
+      if (registeredListener) {
+        (registeredListener as any)({ key1: { oldValue: 'a', newValue: 'b' } }, 'local');
+      }
+
+      expect(allCb).toHaveBeenCalledTimes(1);
+
+      observer.stopAutoBridge();
+    });
+
+    it('14.2 should map all storage areas (local, session, sync, managed, default) and change types (CREATE, DELETE, UPDATE) correctly', () => {
+      let registeredListener: any = null;
+      const mockPort: ExtensionBridgePort = {
+        getBrowserContext: () => ({
+          vendor: 'chrome',
+          manifestVersion: 'mv3',
+          isExtensionContext: false,
+          supportedStorageAreas: ['local', 'session', 'sync', 'managed'],
+          hasSessionStorage: true,
+        }),
+        getItem: async () => Result.ok(null),
+        getItems: async () => Result.ok({} as any),
+        setItem: async () => Result.ok(undefined),
+        setItems: async () => Result.ok(undefined),
+        removeItem: async () => Result.ok(undefined),
+        removeItems: async () => Result.ok(undefined),
+        clear: async () => Result.ok(undefined),
+        getBytesInUse: async () => Result.ok(0),
+        sendMessage: async () => Result.ok(null as any),
+        sendMessageToTab: async () => Result.ok(null as any),
+        onStorageChanged: (l) => {
+          registeredListener = l;
+          return () => {
+            registeredListener = null;
+          };
+        },
+      };
+
+      CrossBrowserBridge.configure(mockPort);
+      const observer = ReactiveStorageObserver.getInstance();
+      const events: StorageEvent[] = [];
+      observer.observeAll((evt) => events.push(evt));
+
+      observer.startAutoBridge();
+      expect(registeredListener).not.toBeNull();
+      const fn: any = registeredListener;
+      if (fn) {
+        // Test local -> localStorage & CREATE
+        fn({ k1: { oldValue: undefined, newValue: 'v1' } }, 'local');
+        // Test session -> sessionStorage & DELETE
+        fn({ k2: { oldValue: 'v2', newValue: undefined } }, 'session');
+        // Test sync -> localStorage & UPDATE
+        fn({ k3: { oldValue: 'v3', newValue: 'v3_new' } }, 'sync');
+        // Test managed -> localStorage
+        fn({ k4: { oldValue: 'v4', newValue: 'v4_new' } }, 'managed');
+        // Test unknown area -> default localStorage
+        fn({ k5: { oldValue: undefined, newValue: 'v5' } }, 'unknown_area');
+      }
+
+      expect(events).toHaveLength(5);
+      expect(events[0]).toMatchObject({ target: 'localStorage', key: 'k1', type: 'CREATE', newValue: 'v1' });
+      expect(events[1]).toMatchObject({ target: 'sessionStorage', key: 'k2', type: 'DELETE', oldValue: 'v2' });
+      expect(events[2]).toMatchObject({ target: 'localStorage', key: 'k3', type: 'UPDATE', oldValue: 'v3', newValue: 'v3_new' });
+      expect(events[3]).toMatchObject({ target: 'localStorage', key: 'k4', type: 'UPDATE' });
+      expect(events[4]).toMatchObject({ target: 'localStorage', key: 'k5', type: 'CREATE' });
+
+      observer.stopAutoBridge();
+      expect(registeredListener).toBeNull();
+
+      // Test idempotent stopAutoBridge
+      expect(() => observer.stopAutoBridge()).not.toThrow();
+    });
+  });
+
+  describe('Suite 15: StorageEventBus Deep Edge Cases & Async Exception Handling', () => {
+    it('15.1 should handle async listener rejection and pass to onErrorHandler', async () => {
+      const errorHandler = vi.fn();
+      bus.setErrorHandler(errorHandler);
+
+      const asyncRejectingListener = vi.fn(async () => {
+        throw new Error('Async promise rejection failure');
+      });
+
+      bus.subscribe('localStorage:asyncErr', asyncRejectingListener);
+
+      bus.publish({ type: 'UPDATE', target: 'localStorage', key: 'asyncErr' });
+
+      await new Promise((resolve) => setTimeout(resolve, 50));
+
+      expect(asyncRejectingListener).toHaveBeenCalledTimes(1);
+      expect(errorHandler).toHaveBeenCalledTimes(1);
+      const err: StorageEventError = errorHandler.mock.calls[0][0];
+      expect(err.code).toBe('SUBSCRIBER_ERROR');
+      expect(err.message).toContain('Async subscriber error');
+    });
+
+    it('15.2 should handle async listener rejection when no onErrorHandler is registered', async () => {
+      const consoleSpy = vi.spyOn(console, 'error').mockImplementation(() => {});
+
+      const asyncRejectingListener = vi.fn(async () => {
+        throw new Error('Async rejection without custom handler');
+      });
+
+      bus.subscribe('localStorage:asyncErrNoHandler', asyncRejectingListener);
+
+      bus.publish({ type: 'UPDATE', target: 'localStorage', key: 'asyncErrNoHandler' });
+
+      await new Promise((resolve) => setTimeout(resolve, 50));
+
+      expect(consoleSpy).toHaveBeenCalledWith(
+        expect.stringContaining('[StorageEventBus] Async listener error for subscription'),
+        expect.any(Error)
+      );
+
+      consoleSpy.mockRestore();
+    });
+
+    it('15.3 should subscribe using RegExp pattern and match correctly', () => {
+      const listener = vi.fn();
+      const token = bus.subscribePattern(/^sessionStorage:user_\d+$/, listener);
+
+      bus.publish({ type: 'UPDATE', target: 'sessionStorage', key: 'user_42' });
+      bus.publish({ type: 'UPDATE', target: 'sessionStorage', key: 'user_abc' });
+
+      expect(listener).toHaveBeenCalledTimes(1);
+      expect(token.topic).toBe('^sessionStorage:user_\\d+$');
+
+      token.unsubscribe();
+    });
+
+    it('15.4 should handle invalid subscribe inputs and return dummy token', () => {
+      const dummy1 = bus.subscribe('', vi.fn());
+      expect(dummy1.id).toContain('sub_invalid');
+
+      const dummy2 = bus.subscribe('topic', null as any);
+      expect(dummy2.id).toContain('sub_invalid');
+
+      const dummyPattern1 = bus.subscribePattern(null as any, vi.fn());
+      expect(dummyPattern1.id).toContain('sub_invalid');
+
+      const dummyPattern2 = bus.subscribePattern('pattern', null as any);
+      expect(dummyPattern2.id).toContain('sub_invalid');
     });
   });
 });
