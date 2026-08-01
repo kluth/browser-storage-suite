@@ -441,6 +441,13 @@ export class StorageAclEngine implements StorageAclPort {
     return false;
   }
 
+  private extractHostFromOrigin(origin: string): string {
+    if (origin.includes('://')) {
+      return origin.split('://')[1];
+    }
+    return origin;
+  }
+
   public matchOrigin(pattern: string, origin: string): boolean {
     if (!pattern || pattern === '*') return true;
     const normPattern = pattern.trim().toLowerCase();
@@ -451,23 +458,25 @@ export class StorageAclEngine implements StorageAclPort {
     // Wildcard scheme check: *://domain.com
     if (normPattern.startsWith('*://')) {
       const targetDomainPattern = normPattern.slice(4);
-      const originParts = normOrigin.split('://');
-      const originDomain = originParts.length > 1 ? originParts[1] : originParts[0];
-      return this.matchDomainHost(targetDomainPattern, originDomain);
+      const originHost = this.extractHostFromOrigin(normOrigin);
+      return this.matchDomainHost(targetDomainPattern, originHost);
     }
 
     // Scheme with domain wildcard: https://*.example.com or http://localhost:*
     if (normPattern.includes('://')) {
       const [patScheme, patHost] = normPattern.split('://');
-      const [origScheme, origHost] = normOrigin.split('://');
+      const originParts = normOrigin.split('://');
+      const origScheme = originParts.length > 1 ? originParts[0] : '';
+      const origHost = originParts.length > 1 ? originParts[1] : originParts[0];
 
       if (patScheme !== '*' && patScheme !== origScheme) {
         return false;
       }
-      return this.matchDomainHost(patHost, origHost ?? '');
+      return this.matchDomainHost(patHost, origHost);
     }
 
-    return this.matchDomainHost(normPattern, normOrigin);
+    const origHost = this.extractHostFromOrigin(normOrigin);
+    return this.matchDomainHost(normPattern, origHost);
   }
 
   private matchDomainHost(patternHost: string, originHost: string): boolean {
@@ -496,8 +505,24 @@ export class StorageAclEngine implements StorageAclPort {
     return false;
   }
 
-  public matchKeyPattern(pattern: string, key: string): boolean {
-    if (!pattern || pattern === '*') return true;
+  private isReDoSUnsafe(pattern: string): boolean {
+    if (pattern.length > 300) return true;
+    // Detect nested quantifiers such as (a+)+, (a*)*, (a+)*, ([a-z]+)+, (a+){2,}, etc.
+    if (/\([^)]*[\+\*\{][^)]*\)[\+\*\{]/.test(pattern)) {
+      return true;
+    }
+    // Detect overlapping alternations with quantifiers e.g. (a|a)+ or (a|b+)+
+    if (/\([^)]*\|[^)]*\)[\+\*\{]/.test(pattern)) {
+      if (/\([^)]*[\+\*][^)]*\|/.test(pattern) || /\|[^)]*[\+\*]/.test(pattern)) {
+        return true;
+      }
+    }
+    return false;
+  }
+
+  public matchKeyPattern(pattern: string | undefined | null, key: string): boolean {
+    if (pattern === undefined || pattern === null || pattern === '*') return true;
+    if (pattern === '') return key === '';
     if (pattern === key) return true;
 
     // Prefix wildcard: user:*
@@ -508,6 +533,9 @@ export class StorageAclEngine implements StorageAclPort {
 
     // Regex format: ^...$
     if (pattern.startsWith('^') && pattern.endsWith('$')) {
+      if (this.isReDoSUnsafe(pattern)) {
+        return false;
+      }
       try {
         const regex = new RegExp(pattern);
         return regex.test(key);
@@ -516,12 +544,13 @@ export class StorageAclEngine implements StorageAclPort {
       }
     }
 
-    // Glob wildcard: cache:**.json or user.*
+    // Glob wildcard: cache:**.json or user.* or data:v?.json
     if (pattern.includes('*') || pattern.includes('?')) {
       const escaped = pattern
         .replace(/[-[\]{}()+.,\\^$|#\s]/g, '\\$&')
         .replace(/\*\*/g, '.*')
-        .replace(/(?<!\.)\*/g, '[^:]*');
+        .replace(/(?<!\.)\*/g, '[^:]*')
+        .replace(/\?/g, '[^:]');
       try {
         const regex = new RegExp(`^${escaped}$`);
         return regex.test(key);

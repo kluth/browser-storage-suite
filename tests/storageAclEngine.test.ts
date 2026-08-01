@@ -601,4 +601,85 @@ describe('StorageAclEngine (RBAC / ABAC / Token Authorization)', () => {
       }
     });
   });
+
+  describe('Engine Delegate Methods & ABAC Edge Cases', () => {
+    it('should delegate getAllRules, revokeRule, and defineRole to repository', async () => {
+      const rule: AclRule = {
+        id: 'r_del',
+        name: 'Del Rule',
+        subjectOrRole: 'sub_del',
+        originPattern: '*',
+        keyPattern: '*',
+        actions: ['READ'],
+        effect: 'ALLOW',
+      };
+      const regRes = await engine.registerRule(rule);
+      expect(regRes.ok).toBe(true);
+
+      const allRes = await engine.getAllRules();
+      expect(allRes.ok).toBe(true);
+      if (allRes.ok) {
+        expect(allRes.value).toHaveLength(1);
+        expect(allRes.value[0].id).toBe('r_del');
+      }
+
+      const revRes = await engine.revokeRule('r_del');
+      expect(revRes.ok).toBe(true);
+
+      const allResAfter = await engine.getAllRules();
+      expect(allResAfter.ok && allResAfter.value).toHaveLength(0);
+
+      const roleDef: AclRoleDefinition = {
+        roleName: 'custom_role',
+        rules: [rule],
+      };
+      const defRoleRes = await engine.defineRole(roleDef);
+      expect(defRoleRes.ok).toBe(true);
+    });
+
+    it('should evaluate ABAC conditions with env and resource fieldPaths', async () => {
+      const rule: AclRule = {
+        id: 'r_abac_env',
+        name: 'ABAC Env Rule',
+        subjectOrRole: 'user_abac',
+        originPattern: '*',
+        keyPattern: '*',
+        actions: ['READ'],
+        effect: 'ALLOW',
+        conditions: [
+          { field: 'origin', operator: 'EQUALS', value: 'https://app.com' },
+          { field: 'env_custom', operator: 'EQUALS', value: 'secret_env' },
+          { field: 'res_type', operator: 'EQUALS', value: 'confidential' },
+        ],
+      };
+      await engine.registerRule(rule);
+
+      const subject: AclSubjectContext = { subjectId: 'user_abac', roles: [] };
+      const env: AclEnvironmentContext = { origin: 'https://app.com', timestamp: Date.now() } as any;
+      (env as any).env_custom = 'secret_env';
+      const resource: AclResourceContext = { key: 'data:1', res_type: 'confidential' } as any;
+
+      const evalRes = await engine.evaluateAccess(subject, env, resource, 'READ');
+      expect(evalRes.ok).toBe(true);
+      if (evalRes.ok) {
+        expect(evalRes.value.allowed).toBe(true);
+      }
+    });
+
+    it('should support wildcard token scope *', async () => {
+      const subject: AclSubjectContext = { subjectId: 'star_scope_user', roles: [] };
+      const issueRes = await engine.issueAccessToken(subject, ['*'], 3600, SECRET);
+      expect(issueRes.ok).toBe(true);
+      if (!issueRes.ok) return;
+
+      const env: AclEnvironmentContext = { origin: 'https://app.com', timestamp: Date.now() + 1000 };
+      const resource: AclResourceContext = { key: 'any:secret:key' };
+
+      const verifyRes = await engine.verifyTokenAccess(issueRes.value, env, resource, 'DELETE', SECRET);
+      expect(verifyRes.ok).toBe(true);
+      if (verifyRes.ok) {
+        expect(verifyRes.value.allowed).toBe(true);
+      }
+    });
+  });
 });
