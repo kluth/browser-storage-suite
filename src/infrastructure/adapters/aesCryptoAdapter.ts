@@ -127,11 +127,10 @@ export class AesCryptoAdapter implements CryptoPort {
       }
 
       let cryptoKey: CryptoKey;
-      let saltBytes: Uint8Array = new Uint8Array(0);
+      const saltBytes = new Uint8Array(AesCryptoAdapter.DEFAULT_SALT_LENGTH);
+      this.getRandomValues(saltBytes);
 
       if (typeof keyOrPassphrase === 'string') {
-        saltBytes = new Uint8Array(AesCryptoAdapter.DEFAULT_SALT_LENGTH);
-        this.getRandomValues(saltBytes);
         const derivedRes = await this.deriveKey(keyOrPassphrase, saltBytes);
         if (!derivedRes.ok) return Result.err(derivedRes.error);
         cryptoKey = derivedRes.value;

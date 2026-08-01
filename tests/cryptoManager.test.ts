@@ -141,6 +141,26 @@ describe('CryptoManager & AesCryptoAdapter (ADR-0001 Storage Encryption at Rest)
         expect(enc1.value).not.toBe(enc2.value);
       }
     });
+
+    it('2.6 should encrypt and decrypt plaintext using CryptoKey instance through CryptoManager facade', async () => {
+      const keyRes = await CryptoManager.generateKey();
+      expect(keyRes.ok).toBe(true);
+      if (!keyRes.ok) return;
+
+      const key = keyRes.value;
+      const plaintext = 'CryptoKey roundtrip through CryptoManager facade';
+
+      const encRes = await CryptoManager.encrypt(plaintext, key);
+      expect(encRes.ok).toBe(true);
+      if (encRes.ok) {
+        expect(encRes.value).toMatch(/^enc:v1:/);
+        const decRes = await CryptoManager.decrypt(encRes.value, key);
+        expect(decRes.ok).toBe(true);
+        if (decRes.ok) {
+          expect(decRes.value).toBe(plaintext);
+        }
+      }
+    });
   });
 
   describe('3. Serialization & Envelope Verification', () => {
