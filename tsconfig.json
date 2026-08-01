@@ -27,6 +27,10 @@
     "tests/storageEventBus.stress.test.ts",
     "tests/storageTestHarness.test.ts",
     "tests/helpers/mockStorageEnvironment.ts",
+    "tests/storageAcl.test.ts",
+    "tests/storageAclEngine.test.ts",
+    "tests/storageAclInterceptor.test.ts",
+    "tests/e2e/tier1_feature_coverage/feature_04_storage_acl.test.ts",
     "wxt.config.ts",
     ".wxt/wxt.d.ts"
   ]
