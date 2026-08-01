@@ -43,10 +43,16 @@ export class CryptoManager {
     encryptedData: string | EncryptedPayloadDto,
     keyOrPassphrase: CryptoKey | string
   ): Promise<Result<string, CryptoError>> {
+    if (!encryptedData) {
+      return Result.err(
+        new CryptoError('INVALID_PAYLOAD_FORMAT', 'Encrypted data cannot be null or undefined')
+      );
+    }
     return CryptoManager.instance.decrypt(encryptedData, keyOrPassphrase);
   }
 
   public static isEncrypted(data: string): boolean {
+    if (!data || typeof data !== 'string') return false;
     const res = CryptoManager.instance.deserializePayload(data);
     return res.ok;
   }
@@ -56,6 +62,11 @@ export class CryptoManager {
     oldPassphrase: string,
     newPassphrase: string
   ): Promise<Result<string[], CryptoError>> {
+    if (!payloads || !Array.isArray(payloads)) {
+      return Result.err(
+        new CryptoError('INVALID_PAYLOAD_FORMAT', 'Payloads array cannot be null or non-array')
+      );
+    }
     const results: string[] = [];
     for (const payload of payloads) {
       const decRes = await CryptoManager.decrypt(payload, oldPassphrase);

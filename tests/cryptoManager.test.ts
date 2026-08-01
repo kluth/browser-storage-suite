@@ -365,5 +365,27 @@ describe('CryptoManager & AesCryptoAdapter (ADR-0001 Storage Encryption at Rest)
         }
       }
     });
+
+    it('5.7 should return Result.err when rotateKeys is called with null or non-array payloads', async () => {
+      // @ts-expect-error testing runtime null input
+      const resNull = await CryptoManager.rotateKeys(null, samplePassphrase, alternatePassphrase);
+      expect(resNull.ok).toBe(false);
+      if (!resNull.ok) {
+        expect(resNull.error.code).toBe('INVALID_PAYLOAD_FORMAT');
+      }
+
+      // @ts-expect-error testing runtime non-array input
+      const resNotArray = await CryptoManager.rotateKeys('not_an_array', samplePassphrase, alternatePassphrase);
+      expect(resNotArray.ok).toBe(false);
+    });
+
+    it('5.8 should return Result.err when decrypt is called with null or empty payload', async () => {
+      // @ts-expect-error testing runtime null input
+      const resNull = await CryptoManager.decrypt(null, samplePassphrase);
+      expect(resNull.ok).toBe(false);
+      if (!resNull.ok) {
+        expect(resNull.error.code).toBe('INVALID_PAYLOAD_FORMAT');
+      }
+    });
   });
 });
