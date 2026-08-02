@@ -178,7 +178,7 @@ describe('Challenger M2 F3 R3: High-Concurrency, Linearizability & Zero-Leak Str
       const grantOrder: string[] = [];
 
       // 2. Queue waiters in reverse priority order and auto-release upon grant
-      const pLow = waiterEngines[0].acquireLock(lockKey, { priority: 'LOW' }).then(async (res) => {
+      const pLow = waiterEngines[0].acquireLock(lockKey, { priority: 'LOW', timeoutMs: 30000 }).then(async (res) => {
         if (res.ok) {
           grantOrder.push('LOW');
           await waiterEngines[0].releaseLock(res.value.lockId);
@@ -186,7 +186,7 @@ describe('Challenger M2 F3 R3: High-Concurrency, Linearizability & Zero-Leak Str
         return res;
       });
 
-      const pNormal = waiterEngines[1].acquireLock(lockKey, { priority: 'NORMAL' }).then(async (res) => {
+      const pNormal = waiterEngines[1].acquireLock(lockKey, { priority: 'NORMAL', timeoutMs: 30000 }).then(async (res) => {
         if (res.ok) {
           grantOrder.push('NORMAL');
           await waiterEngines[1].releaseLock(res.value.lockId);
@@ -194,7 +194,7 @@ describe('Challenger M2 F3 R3: High-Concurrency, Linearizability & Zero-Leak Str
         return res;
       });
 
-      const pHigh = waiterEngines[2].acquireLock(lockKey, { priority: 'HIGH' }).then(async (res) => {
+      const pHigh = waiterEngines[2].acquireLock(lockKey, { priority: 'HIGH', timeoutMs: 30000 }).then(async (res) => {
         if (res.ok) {
           grantOrder.push('HIGH');
           await waiterEngines[2].releaseLock(res.value.lockId);
@@ -202,7 +202,7 @@ describe('Challenger M2 F3 R3: High-Concurrency, Linearizability & Zero-Leak Str
         return res;
       });
 
-      const pCritical = waiterEngines[3].acquireLock(lockKey, { priority: 'CRITICAL' }).then(async (res) => {
+      const pCritical = waiterEngines[3].acquireLock(lockKey, { priority: 'CRITICAL', timeoutMs: 30000 }).then(async (res) => {
         if (res.ok) {
           grantOrder.push('CRITICAL');
           await waiterEngines[3].releaseLock(res.value.lockId);
@@ -246,7 +246,7 @@ describe('Challenger M2 F3 R3: High-Concurrency, Linearizability & Zero-Leak Str
 
       // Register waiters sequentially with slight micro-delays to guarantee distinct timestamps
       for (let i = 0; i < numWaiters; i++) {
-        const p = waiters[i].acquireLock(lockKey, { priority: 'NORMAL' }).then(async (res) => {
+        const p = waiters[i].acquireLock(lockKey, { priority: 'NORMAL', timeoutMs: 30000 }).then(async (res) => {
           if (res.ok) {
             grantSequence.push(i);
             await waiters[i].releaseLock(res.value.lockId);
