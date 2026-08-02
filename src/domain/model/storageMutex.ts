@@ -13,6 +13,7 @@ export interface StorageLockRequestOptions {
   steal?: boolean;
   reentrant?: boolean;
   signal?: AbortSignal;
+  driverType?: 'auto' | 'web-locks' | 'broadcast-channel' | 'in-memory';
 }
 
 export interface StorageLockInfo {
@@ -37,6 +38,8 @@ export interface LockWaiterInfo {
   priority: number;
   requestedAt: number;
   timeoutMs: number;
+  leaseDurationMs: number;
+  sequenceNumber?: number;
 }
 
 export interface StorageMutexSnapshot {

@@ -36,6 +36,11 @@ export class StorageMutexAdapter implements StorageMutexRepositoryPort {
   private storage: StorageBackend;
   private listeners = new Set<(event: { type: string; payload: any }) => void>();
 
+  private locksCache = new Map<string, StorageLockInfo>();
+  private waitersCache: LockWaiterInfo[] = [];
+  private fencingCache: Record<string, number> = {};
+  private waiterSequence = 0;
+
   constructor(customStorage?: StorageBackend) {
     if (customStorage) {
       this.storage = customStorage;
@@ -58,7 +63,8 @@ export class StorageMutexAdapter implements StorageMutexRepositoryPort {
   }
 
   public notify(type: string, payload: any): void {
-    for (const listener of Array.from(this.listeners)) {
+    const snapshot = Array.from(this.listeners);
+    for (const listener of snapshot) {
       try {
         listener({ type, payload });
       } catch {
@@ -68,62 +74,77 @@ export class StorageMutexAdapter implements StorageMutexRepositoryPort {
   }
 
   private async readLocksMap(): Promise<Map<string, StorageLockInfo>> {
-    try {
-      const raw = await this.storage.getItem(StorageMutexAdapter.LOCKS_KEY);
-      if (!raw) return new Map();
-      const parsed = JSON.parse(raw) as StorageLockInfo[];
-      const map = new Map<string, StorageLockInfo>();
-      const now = Date.now();
-      for (const item of parsed) {
-        if (item.state === 'ACQUIRED' && item.expiresAt > 0 && item.expiresAt <= now) {
-          item.state = 'EXPIRED';
+    if (!(this.storage instanceof InMemoryStorageBackend)) {
+      try {
+        const json = await Promise.resolve(this.storage.getItem(StorageMutexAdapter.LOCKS_KEY));
+        if (json && typeof json === 'string') {
+          const list = JSON.parse(json) as StorageLockInfo[];
+          this.locksCache.clear();
+          for (const item of list) {
+            this.locksCache.set(item.lockId, item);
+          }
         }
-        map.set(item.lockId, item);
-      }
-      return map;
-    } catch {
-      return new Map();
+      } catch {}
     }
+    const now = Date.now();
+    for (const item of this.locksCache.values()) {
+      if (item.state === 'ACQUIRED' && item.expiresAt > 0 && item.expiresAt <= now) {
+        item.state = 'EXPIRED';
+      }
+    }
+    return new Map(this.locksCache);
   }
 
   private async writeLocksMap(map: Map<string, StorageLockInfo>): Promise<void> {
-    const list = Array.from(map.values());
-    await this.storage.setItem(StorageMutexAdapter.LOCKS_KEY, JSON.stringify(list));
+    if (this.storage instanceof InMemoryStorageBackend) return;
+    try {
+      const list = Array.from(this.locksCache.values());
+      this.storage.setItem(StorageMutexAdapter.LOCKS_KEY, JSON.stringify(list));
+    } catch {}
   }
 
   private async readWaitersList(): Promise<LockWaiterInfo[]> {
-    try {
-      const raw = await this.storage.getItem(StorageMutexAdapter.WAITERS_KEY);
-      if (!raw) return [];
-      return JSON.parse(raw) as LockWaiterInfo[];
-    } catch {
-      return [];
+    if (!(this.storage instanceof InMemoryStorageBackend)) {
+      try {
+        const json = await Promise.resolve(this.storage.getItem(StorageMutexAdapter.WAITERS_KEY));
+        if (json && typeof json === 'string') {
+          this.waitersCache = JSON.parse(json) as LockWaiterInfo[];
+        }
+      } catch {}
     }
+    return [...this.waitersCache];
   }
 
   private async writeWaitersList(list: LockWaiterInfo[]): Promise<void> {
-    await this.storage.setItem(StorageMutexAdapter.WAITERS_KEY, JSON.stringify(list));
+    if (this.storage instanceof InMemoryStorageBackend) return;
+    try {
+      this.storage.setItem(StorageMutexAdapter.WAITERS_KEY, JSON.stringify(this.waitersCache));
+    } catch {}
   }
 
   private async readFencingMap(): Promise<Record<string, number>> {
-    try {
-      const raw = await this.storage.getItem(StorageMutexAdapter.FENCING_KEY);
-      if (!raw) return {};
-      return JSON.parse(raw) as Record<string, number>;
-    } catch {
-      return {};
+    if (!(this.storage instanceof InMemoryStorageBackend)) {
+      try {
+        const json = await Promise.resolve(this.storage.getItem(StorageMutexAdapter.FENCING_KEY));
+        if (json && typeof json === 'string') {
+          this.fencingCache = JSON.parse(json);
+        }
+      } catch {}
     }
+    return this.fencingCache;
   }
 
   private async writeFencingMap(map: Record<string, number>): Promise<void> {
-    await this.storage.setItem(StorageMutexAdapter.FENCING_KEY, JSON.stringify(map));
+    if (this.storage instanceof InMemoryStorageBackend) return;
+    try {
+      this.storage.setItem(StorageMutexAdapter.FENCING_KEY, JSON.stringify(this.fencingCache));
+    } catch {}
   }
 
   async saveLock(lock: StorageLockInfo): Promise<Result<void, StorageMutexError>> {
     try {
-      const map = await this.readLocksMap();
-      map.set(lock.lockId, { ...lock });
-      await this.writeLocksMap(map);
+      this.locksCache.set(lock.lockId, { ...lock });
+      this.writeLocksMap(this.locksCache).catch(() => {});
       return Result.ok(undefined);
     } catch (err) {
       return Result.err(
@@ -134,9 +155,8 @@ export class StorageMutexAdapter implements StorageMutexRepositoryPort {
 
   async removeLock(lockId: string): Promise<Result<void, StorageMutexError>> {
     try {
-      const map = await this.readLocksMap();
-      map.delete(lockId);
-      await this.writeLocksMap(map);
+      this.locksCache.delete(lockId);
+      this.writeLocksMap(this.locksCache).catch(() => {});
       return Result.ok(undefined);
     } catch (err) {
       return Result.err(
@@ -184,14 +204,17 @@ export class StorageMutexAdapter implements StorageMutexRepositoryPort {
 
   async saveWaiter(waiter: LockWaiterInfo): Promise<Result<void, StorageMutexError>> {
     try {
-      const waiters = await this.readWaitersList();
-      const idx = waiters.findIndex((w) => w.requestId === waiter.requestId);
-      if (idx >= 0) {
-        waiters[idx] = waiter;
-      } else {
-        waiters.push(waiter);
+      if (!waiter.sequenceNumber) {
+        this.waiterSequence += 1;
+        waiter.sequenceNumber = this.waiterSequence;
       }
-      await this.writeWaitersList(waiters);
+      const idx = this.waitersCache.findIndex((w) => w.requestId === waiter.requestId);
+      if (idx >= 0) {
+        this.waitersCache[idx] = { ...waiter };
+      } else {
+        this.waitersCache.push({ ...waiter });
+      }
+      this.writeWaitersList(this.waitersCache).catch(() => {});
       return Result.ok(undefined);
     } catch (err) {
       return Result.err(
@@ -200,12 +223,13 @@ export class StorageMutexAdapter implements StorageMutexRepositoryPort {
     }
   }
 
-  async removeWaiter(requestId: string): Promise<Result<void, StorageMutexError>> {
+  async removeWaiter(requestId: string): Promise<Result<boolean, StorageMutexError>> {
     try {
-      let waiters = await this.readWaitersList();
-      waiters = waiters.filter((w) => w.requestId !== requestId);
-      await this.writeWaitersList(waiters);
-      return Result.ok(undefined);
+      const initialLen = this.waitersCache.length;
+      this.waitersCache = this.waitersCache.filter((w) => w.requestId !== requestId);
+      const removed = this.waitersCache.length < initialLen;
+      this.writeWaitersList(this.waitersCache).catch(() => {});
+      return Result.ok(removed);
     } catch (err) {
       return Result.err(
         new StorageMutexError('ADAPTER_ERROR', 'Failed to remove waiter', undefined, undefined, err)
@@ -237,10 +261,9 @@ export class StorageMutexAdapter implements StorageMutexRepositoryPort {
 
   async incrementFencingToken(name: string): Promise<Result<number, StorageMutexError>> {
     try {
-      const map = await this.readFencingMap();
-      const next = (map[name] || 0) + 1;
-      map[name] = next;
-      await this.writeFencingMap(map);
+      const next = (this.fencingCache[name] || 0) + 1;
+      this.fencingCache[name] = next;
+      this.writeFencingMap(this.fencingCache).catch(() => {});
       return Result.ok(next);
     } catch (err) {
       return Result.err(
@@ -251,6 +274,10 @@ export class StorageMutexAdapter implements StorageMutexRepositoryPort {
 
   async clearAll(): Promise<Result<void, StorageMutexError>> {
     try {
+      this.locksCache.clear();
+      this.waitersCache = [];
+      this.fencingCache = {};
+      this.waiterSequence = 0;
       await this.storage.removeItem(StorageMutexAdapter.LOCKS_KEY);
       await this.storage.removeItem(StorageMutexAdapter.WAITERS_KEY);
       await this.storage.removeItem(StorageMutexAdapter.FENCING_KEY);
