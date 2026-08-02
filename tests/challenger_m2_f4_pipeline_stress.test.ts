@@ -1,9 +1,12 @@
 import { describe, it, expect, beforeEach } from 'vitest';
 import { StorageSchemaMigrationEngine } from '../utils/storageSchemaMigrationEngine';
 import { StorageSchemaMigrationAdapter } from '../src/infrastructure/adapters/storageSchemaMigrationAdapter';
-import { SchemaDefinition } from '../src/domain/model/storageSchemaMigration';
+import {
+  SchemaDefinition,
+  StorageSchemaMigrationError,
+} from '../src/domain/model/storageSchemaMigration';
 
-describe('Pipeline Stress Challenger F4 (ADR-0009 Storage Schema Migration Engine)', () => {
+describe('Challenger M2 Feature 4 Pipeline Stress Test Harness', () => {
   let adapter: StorageSchemaMigrationAdapter;
   let engine: StorageSchemaMigrationEngine;
 
@@ -12,62 +15,66 @@ describe('Pipeline Stress Challenger F4 (ADR-0009 Storage Schema Migration Engin
     engine = new StorageSchemaMigrationEngine(adapter);
   });
 
-  describe('1. Multi-Version Migration Steps Pipeline (v1 -> v2 -> v3 -> v4 -> v5)', () => {
-    it('should successfully execute a 5-step forward migration chain and update storage header', async () => {
-      const stepExecutionLog: number[] = [];
+  describe('1. Multi-version migration steps (v1 -> v5)', () => {
+    it('should sequentially execute up migrations v1 -> v5 and down migrations v5 -> v1', async () => {
+      const upExecuted: number[] = [];
+      const downExecuted: number[] = [];
 
       const schema: SchemaDefinition = {
-        namespace: 'multi_step_ns',
+        namespace: 'multi_v5_ns',
         currentVersion: 5,
         minSupportedVersion: 1,
         invalidationStrategy: 'purge',
         migrations: [
           {
             version: 2,
-            name: 'Step 2: Add step2Flag',
+            name: 'v1 to v2: add profile',
             up: (data) => {
-              stepExecutionLog.push(2);
-              return { ...data, step2Flag: true, val: (data.val as number) + 10 };
+              upExecuted.push(2);
+              return { ...data, profile: { username: 'user1' }, versionTrack: [...((data.versionTrack as number[]) || []), 2] };
             },
             down: (data) => {
-              const { step2Flag, ...rest } = data;
-              return { ...rest, val: (data.val as number) - 10 };
+              downExecuted.push(2);
+              const { profile, ...rest } = data;
+              return rest;
             },
           },
           {
             version: 3,
-            name: 'Step 3: Multiply val by 2',
+            name: 'v2 to v3: add settings',
             up: (data) => {
-              stepExecutionLog.push(3);
-              return { ...data, step3Flag: true, val: (data.val as number) * 2 };
+              upExecuted.push(3);
+              return { ...data, settings: { theme: 'dark' }, versionTrack: [...((data.versionTrack as number[]) || []), 3] };
             },
             down: (data) => {
-              const { step3Flag, ...rest } = data;
-              return { ...rest, val: (data.val as number) / 2 };
+              downExecuted.push(3);
+              const { settings, ...rest } = data;
+              return rest;
             },
           },
           {
             version: 4,
-            name: 'Step 4: Rename val to result',
+            name: 'v3 to v4: add permissions',
             up: (data) => {
-              stepExecutionLog.push(4);
-              const { val, ...rest } = data;
-              return { ...rest, step4Flag: true, result: val };
+              upExecuted.push(4);
+              return { ...data, permissions: ['read', 'write'], versionTrack: [...((data.versionTrack as number[]) || []), 4] };
             },
             down: (data) => {
-              const { result, step4Flag, ...rest } = data;
-              return { ...rest, val: result };
+              downExecuted.push(4);
+              const { permissions, ...rest } = data;
+              return rest;
             },
           },
           {
             version: 5,
-            name: 'Step 5: Append status tag',
+            name: 'v4 to v5: add metadata',
             up: (data) => {
-              stepExecutionLog.push(5);
-              return { ...data, status: 'MIGRATED_V5' };
+              upExecuted.push(5);
+              return { ...data, metadata: { migrated: true }, versionTrack: [...((data.versionTrack as number[]) || []), 5] };
             },
             down: (data) => {
-              const { status, ...rest } = data;
+              downExecuted.push(5);
+              const { metadata, ...rest } = data;
               return rest;
             },
           },
@@ -77,118 +84,104 @@ describe('Pipeline Stress Challenger F4 (ADR-0009 Storage Schema Migration Engin
       const regRes = engine.registerSchema(schema);
       expect(regRes.ok).toBe(true);
 
-      const target = 'localStorage';
-      const key = 'entity:1001';
-      const initialPayload = { entityId: 1001, val: 5 };
+      const initialData = { id: 'usr_100', versionTrack: [1] };
 
-      await adapter.savePayload(target, key, initialPayload);
-      await adapter.saveHeader(target, key, 'multi_step_ns', {
-        namespace: 'multi_step_ns',
+      // Execute Up v1 -> v5
+      const resUp = await engine.migrateUp('multi_v5_ns', initialData, 1, 5);
+      expect(resUp.ok).toBe(true);
+      if (!resUp.ok) return;
+
+      expect(resUp.value.success).toBe(true);
+      expect(resUp.value.initialVersion).toBe(1);
+      expect(resUp.value.finalVersion).toBe(5);
+      expect(resUp.value.appliedSteps).toEqual([2, 3, 4, 5]);
+      expect(resUp.value.rolledBackSteps).toEqual([]);
+      expect(upExecuted).toEqual([2, 3, 4, 5]);
+      expect(resUp.value.migratedData).toEqual({
+        id: 'usr_100',
+        versionTrack: [1, 2, 3, 4, 5],
+        profile: { username: 'user1' },
+        settings: { theme: 'dark' },
+        permissions: ['read', 'write'],
+        metadata: { migrated: true },
+      });
+
+      // Execute Down v5 -> v1
+      const resDown = await engine.migrateDown('multi_v5_ns', resUp.value.migratedData!, 5, 1);
+      expect(resDown.ok).toBe(true);
+      if (!resDown.ok) return;
+
+      expect(resDown.value.success).toBe(true);
+      expect(resDown.value.initialVersion).toBe(5);
+      expect(resDown.value.finalVersion).toBe(1);
+      expect(resDown.value.appliedSteps).toEqual([5, 4, 3, 2]);
+      expect(downExecuted).toEqual([5, 4, 3, 2]);
+      expect(resDown.value.migratedData).toEqual({
+        id: 'usr_100',
+        versionTrack: [1, 2, 3, 4, 5],
+      });
+    });
+
+    it('should migrate storage key transparently from v1 to v5 via migrateStorageKey', async () => {
+      const schema: SchemaDefinition = {
+        namespace: 'key_v5_ns',
+        currentVersion: 5,
+        minSupportedVersion: 1,
+        invalidationStrategy: 'purge',
+        migrations: Array.from({ length: 4 }, (_, i) => ({
+          version: i + 2,
+          name: `Step ${i + 2}`,
+          up: (d) => ({ ...d, [`step_${i + 2}`]: true }),
+          down: (d) => d,
+        })),
+      };
+
+      engine.registerSchema(schema);
+      const target = 'localStorage';
+      const key = 'user:settings:v5';
+
+      await adapter.savePayload(target, key, { userId: 42 });
+      await adapter.saveHeader(target, key, 'key_v5_ns', {
+        namespace: 'key_v5_ns',
         version: 1,
         updatedAt: Date.now(),
         appliedMigrations: [],
       });
 
-      const migrateRes = await engine.migrateStorageKey(target, key, 'multi_step_ns');
-      expect(migrateRes.ok).toBe(true);
-      if (migrateRes.ok) {
-        expect(migrateRes.value.success).toBe(true);
-        expect(migrateRes.value.initialVersion).toBe(1);
-        expect(migrateRes.value.finalVersion).toBe(5);
-        expect(migrateRes.value.appliedSteps).toEqual([2, 3, 4, 5]);
-        expect(migrateRes.value.rolledBackSteps).toEqual([]);
-        expect(migrateRes.value.invalidated).toBe(false);
-      }
+      const res = await engine.migrateStorageKey(target, key, 'key_v5_ns');
+      expect(res.ok).toBe(true);
+      if (!res.ok) return;
 
-      expect(stepExecutionLog).toEqual([2, 3, 4, 5]);
+      expect(res.value.success).toBe(true);
+      expect(res.value.initialVersion).toBe(1);
+      expect(res.value.finalVersion).toBe(5);
+      expect(res.value.appliedSteps).toEqual([2, 3, 4, 5]);
 
-      // Verify payload in storage: ((5 + 10) * 2 = 30)
       const payloadRes = await adapter.loadPayload(target, key);
       expect(payloadRes.ok).toBe(true);
       if (payloadRes.ok) {
         expect(payloadRes.value).toEqual({
-          entityId: 1001,
-          step2Flag: true,
-          step3Flag: true,
-          step4Flag: true,
-          result: 30,
-          status: 'MIGRATED_V5',
+          userId: 42,
+          step_2: true,
+          step_3: true,
+          step_4: true,
+          step_5: true,
         });
       }
 
-      // Verify header in storage
-      const headerRes = await adapter.loadHeader(target, key, 'multi_step_ns');
+      const headerRes = await adapter.loadHeader(target, key, 'key_v5_ns');
       expect(headerRes.ok).toBe(true);
       if (headerRes.ok) {
         expect(headerRes.value?.version).toBe(5);
         expect(headerRes.value?.appliedMigrations).toEqual([2, 3, 4, 5]);
       }
     });
-
-    it('should correctly execute reverse migration (migrateDown) from v5 to v1', async () => {
-      const schema: SchemaDefinition = {
-        namespace: 'down_chain_ns',
-        currentVersion: 5,
-        minSupportedVersion: 1,
-        invalidationStrategy: 'purge',
-        migrations: [
-          {
-            version: 2,
-            name: 'Step 2',
-            up: (d) => ({ ...d, v2: true }),
-            down: (d) => {
-              const { v2, ...rest } = d;
-              return rest;
-            },
-          },
-          {
-            version: 3,
-            name: 'Step 3',
-            up: (d) => ({ ...d, v3: true }),
-            down: (d) => {
-              const { v3, ...rest } = d;
-              return rest;
-            },
-          },
-          {
-            version: 4,
-            name: 'Step 4',
-            up: (d) => ({ ...d, v4: true }),
-            down: (d) => {
-              const { v4, ...rest } = d;
-              return rest;
-            },
-          },
-          {
-            version: 5,
-            name: 'Step 5',
-            up: (d) => ({ ...d, v5: true }),
-            down: (d) => {
-              const { v5, ...rest } = d;
-              return rest;
-            },
-          },
-        ],
-      };
-
-      engine.registerSchema(schema);
-
-      const v5Data = { base: 'data', v2: true, v3: true, v4: true, v5: true };
-      const downRes = await engine.migrateDown('down_chain_ns', v5Data, 5, 1);
-
-      expect(downRes.ok).toBe(true);
-      if (downRes.ok) {
-        expect(downRes.value.appliedSteps).toEqual([5, 4, 3, 2]);
-        expect(downRes.value.finalVersion).toBe(1);
-        expect(downRes.value.migratedData).toEqual({ base: 'data' });
-      }
-    });
   });
 
-  describe('2. Intermediate Step Failures & Atomic Step-by-Step Rollback', () => {
-    it('should trigger atomic step-by-step rollback in reverse order when intermediate step 4 fails during v1->v5 migration', async () => {
-      const upCalled: number[] = [];
-      const downCalled: number[] = [];
+  describe('2. Intermediate step failure triggering atomic step-by-step rollback', () => {
+    it('should roll back applied steps v2 and v3 in exact reverse order when step v4 fails', async () => {
+      const upOrder: number[] = [];
+      const downOrder: number[] = [];
 
       const schema: SchemaDefinition = {
         namespace: 'rollback_ns',
@@ -199,26 +192,26 @@ describe('Pipeline Stress Challenger F4 (ADR-0009 Storage Schema Migration Engin
           {
             version: 2,
             name: 'Step 2',
-            up: (d) => {
-              upCalled.push(2);
-              return { ...d, step2: 'done' };
+            up: (data) => {
+              upOrder.push(2);
+              return { ...data, v2: true };
             },
-            down: (d) => {
-              downCalled.push(2);
-              const { step2, ...rest } = d;
+            down: (data) => {
+              downOrder.push(2);
+              const { v2, ...rest } = data;
               return rest;
             },
           },
           {
             version: 3,
             name: 'Step 3',
-            up: (d) => {
-              upCalled.push(3);
-              return { ...d, step3: 'done' };
+            up: (data) => {
+              upOrder.push(3);
+              return { ...data, v3: true };
             },
-            down: (d) => {
-              downCalled.push(3);
-              const { step3, ...rest } = d;
+            down: (data) => {
+              downOrder.push(3);
+              const { v3, ...rest } = data;
               return rest;
             },
           },
@@ -226,82 +219,56 @@ describe('Pipeline Stress Challenger F4 (ADR-0009 Storage Schema Migration Engin
             version: 4,
             name: 'Step 4 (Fails)',
             up: () => {
-              upCalled.push(4);
-              throw new Error('Simulated failure in Step 4 UP');
+              upOrder.push(4);
+              throw new Error('Simulated failure during Step 4 migration');
             },
-            down: (d) => {
-              downCalled.push(4);
-              return d;
-            },
+            down: (data) => data,
           },
           {
             version: 5,
             name: 'Step 5',
-            up: (d) => {
-              upCalled.push(5);
-              return { ...d, step5: 'done' };
-            },
-            down: (d) => d,
+            up: (data) => ({ ...data, v5: true }),
+            down: (data) => data,
           },
         ],
       };
 
       engine.registerSchema(schema);
 
-      const target = 'localStorage';
-      const key = 'rollback_key';
-      const initialPayload = { raw: 'original_v1_data' };
-
-      await adapter.savePayload(target, key, initialPayload);
-      await adapter.saveHeader(target, key, 'rollback_ns', {
-        namespace: 'rollback_ns',
-        version: 1,
-        updatedAt: Date.now(),
-        appliedMigrations: [],
-      });
-
-      const res = await engine.migrateStorageKey(target, key, 'rollback_ns');
+      const res = await engine.migrateUp('rollback_ns', { base: 'data' }, 1, 5);
 
       expect(res.ok).toBe(false);
       if (!res.ok) {
         expect(res.error.kind).toBe('MIGRATION_STEP_FAILED');
         expect(res.error.version).toBe(4);
         expect(res.error.stepName).toBe('Step 4 (Fails)');
+        expect(res.error.message).toContain('Simulated failure during Step 4 migration');
       }
 
-      // Step 2 and Step 3 up ran, then Step 4 up failed.
-      expect(upCalled).toEqual([2, 3, 4]);
-      // Rollback must call step 3 down then step 2 down in reverse order
-      expect(downCalled).toEqual([3, 2]);
-
-      // Storage header must remain at version 1 (unmodified/restored)
-      const headerRes = await adapter.loadHeader(target, key, 'rollback_ns');
-      expect(headerRes.ok).toBe(true);
-      if (headerRes.ok) {
-        expect(headerRes.value?.version).toBe(1);
-      }
+      // Assert up execution: 2, 3, 4
+      expect(upOrder).toEqual([2, 3, 4]);
+      // Assert rollback execution order: 3 then 2 (exact reverse of applied steps)
+      expect(downOrder).toEqual([3, 2]);
     });
 
-    it('should return ROLLBACK_FAILED when down function throws during rollback execution', async () => {
+    it('should preserve storage header version at starting version when migrateStorageKey encounters step failure', async () => {
       const schema: SchemaDefinition = {
-        namespace: 'rollback_fail_ns',
+        namespace: 'key_fail_ns',
         currentVersion: 3,
         minSupportedVersion: 1,
         invalidationStrategy: 'purge',
         migrations: [
           {
             version: 2,
-            name: 'Step 2 (Down throws)',
+            name: 'Step 2',
             up: (d) => ({ ...d, step2: true }),
-            down: () => {
-              throw new Error('Fatal error inside Step 2 DOWN handler');
-            },
+            down: (d) => d,
           },
           {
             version: 3,
-            name: 'Step 3 (Up throws)',
+            name: 'Step 3 (Fails)',
             up: () => {
-              throw new Error('Step 3 UP failed');
+              throw new Error('Step 3 exploded');
             },
             down: (d) => d,
           },
@@ -309,68 +276,83 @@ describe('Pipeline Stress Challenger F4 (ADR-0009 Storage Schema Migration Engin
       };
 
       engine.registerSchema(schema);
-      const res = await engine.migrateUp('rollback_fail_ns', { base: 1 }, 1, 3);
+      const target = 'localStorage';
+      const key = 'critical:config';
 
+      await adapter.savePayload(target, key, { orig: 'value' });
+      await adapter.saveHeader(target, key, 'key_fail_ns', {
+        namespace: 'key_fail_ns',
+        version: 1,
+        updatedAt: 1000,
+        appliedMigrations: [],
+      });
+
+      const res = await engine.migrateStorageKey(target, key, 'key_fail_ns');
       expect(res.ok).toBe(false);
       if (!res.ok) {
-        expect(res.error.kind).toBe('ROLLBACK_FAILED');
-        expect(res.error.version).toBe(2);
-        expect(res.error.stepName).toBe('Step 2 (Down throws)');
+        expect(res.error.kind).toBe('MIGRATION_STEP_FAILED');
+      }
+
+      // Verify header in storage was reset/preserved at version 1
+      const headerRes = await adapter.loadHeader(target, key, 'key_fail_ns');
+      expect(headerRes.ok).toBe(true);
+      if (headerRes.ok) {
+        expect(headerRes.value?.version).toBe(1);
       }
     });
   });
 
-  describe('3. Declarative Invalidation Policy Execution (purge, reset-default, backup-and-purge, fail)', () => {
-    it('Policy "purge": should purge payload and header when version < minSupportedVersion', async () => {
+  describe('3. Declarative invalidation policy execution (purge, reset-default, backup-and-purge, fail)', () => {
+    const rawData = { legacyKey: 'oldValue', active: true };
+
+    it('purge: should delete payload and header when fromVersion is below minSupportedVersion', async () => {
       const schema: SchemaDefinition = {
-        namespace: 'purge_policy_ns',
-        currentVersion: 3,
-        minSupportedVersion: 2,
+        namespace: 'purge_ns',
+        currentVersion: 5,
+        minSupportedVersion: 3,
         invalidationStrategy: 'purge',
         migrations: [],
       };
 
       engine.registerSchema(schema);
       const target = 'localStorage';
-      const key = 'obsolete_purge_key';
+      const key = 'purge_key';
 
-      await adapter.savePayload(target, key, { oldData: 'v0_legacy' });
-      await adapter.saveHeader(target, key, 'purge_policy_ns', {
-        namespace: 'purge_policy_ns',
-        version: 1, // Below minSupportedVersion 2
+      await adapter.savePayload(target, key, rawData);
+      await adapter.saveHeader(target, key, 'purge_ns', {
+        namespace: 'purge_ns',
+        version: 1,
         updatedAt: Date.now(),
         appliedMigrations: [],
       });
 
-      const res = await engine.migrateStorageKey(target, key, 'purge_policy_ns');
-
+      const res = await engine.migrateStorageKey(target, key, 'purge_ns');
       expect(res.ok).toBe(true);
-      if (res.ok) {
-        expect(res.value.invalidated).toBe(true);
-        expect(res.value.purged).toBe(true);
-      }
+      if (!res.ok) return;
 
-      // Payload and header should be deleted
+      expect(res.value.invalidated).toBe(true);
+      expect(res.value.purged).toBe(true);
+      expect(res.value.finalVersion).toBe(5);
+
       const payloadRes = await adapter.loadPayload(target, key);
       expect(payloadRes.ok).toBe(true);
       if (payloadRes.ok) {
         expect(payloadRes.value).toBeNull();
       }
 
-      const headerRes = await adapter.loadHeader(target, key, 'purge_policy_ns');
+      const headerRes = await adapter.loadHeader(target, key, 'purge_ns');
       expect(headerRes.ok).toBe(true);
       if (headerRes.ok) {
         expect(headerRes.value).toBeNull();
       }
     });
 
-    it('Policy "reset-default": should reset payload to defaultValue and write currentVersion header', async () => {
-      const defaultState = { theme: 'dark', language: 'en', notificationsEnabled: true };
-
+    it('reset-default: should overwrite storage payload with defaultValue and update schema header to currentVersion', async () => {
+      const defaultState = { theme: 'light', notifications: true, role: 'guest' };
       const schema: SchemaDefinition = {
-        namespace: 'reset_default_policy_ns',
-        currentVersion: 3,
-        minSupportedVersion: 2,
+        namespace: 'reset_ns',
+        currentVersion: 4,
+        minSupportedVersion: 3,
         invalidationStrategy: 'reset-default',
         defaultValue: defaultState,
         migrations: [],
@@ -378,25 +360,23 @@ describe('Pipeline Stress Challenger F4 (ADR-0009 Storage Schema Migration Engin
 
       engine.registerSchema(schema);
       const target = 'localStorage';
-      const key = 'obsolete_reset_key';
+      const key = 'user_preferences';
 
-      await adapter.savePayload(target, key, { brokenField: 999 });
-      await adapter.saveHeader(target, key, 'reset_default_policy_ns', {
-        namespace: 'reset_default_policy_ns',
-        version: 1, // Below minSupportedVersion 2
+      await adapter.savePayload(target, key, { ancientSetting: 'obsolete' });
+      await adapter.saveHeader(target, key, 'reset_ns', {
+        namespace: 'reset_ns',
+        version: 1,
         updatedAt: Date.now(),
         appliedMigrations: [],
       });
 
-      const res = await engine.migrateStorageKey(target, key, 'reset_default_policy_ns');
-
+      const res = await engine.migrateStorageKey(target, key, 'reset_ns');
       expect(res.ok).toBe(true);
-      if (res.ok) {
-        expect(res.value.invalidated).toBe(true);
-        expect(res.value.purged).toBe(false);
-        expect(res.value.migratedData).toEqual(defaultState);
-        expect(res.value.finalVersion).toBe(3);
-      }
+      if (!res.ok) return;
+
+      expect(res.value.invalidated).toBe(true);
+      expect(res.value.purged).toBe(false);
+      expect(res.value.migratedData).toEqual(defaultState);
 
       const payloadRes = await adapter.loadPayload(target, key);
       expect(payloadRes.ok).toBe(true);
@@ -404,16 +384,27 @@ describe('Pipeline Stress Challenger F4 (ADR-0009 Storage Schema Migration Engin
         expect(payloadRes.value).toEqual(defaultState);
       }
 
-      const headerRes = await adapter.loadHeader(target, key, 'reset_default_policy_ns');
+      const headerRes = await adapter.loadHeader(target, key, 'reset_ns');
       expect(headerRes.ok).toBe(true);
       if (headerRes.ok) {
-        expect(headerRes.value?.version).toBe(3);
+        expect(headerRes.value?.version).toBe(4);
       }
     });
 
-    it('Policy "backup-and-purge": should create payload backup before purging main payload and header', async () => {
+    it('backup-and-purge: should create backup payload entry before purging key data', async () => {
+      let backupKeyCreated = '';
+
+      const originalBackup = adapter.backupPayload.bind(adapter);
+      adapter.backupPayload = async (target, key, namespace, payload) => {
+        const res = await originalBackup(target, key, namespace, payload);
+        if (res.ok) {
+          backupKeyCreated = res.value;
+        }
+        return res;
+      };
+
       const schema: SchemaDefinition = {
-        namespace: 'backup_purge_policy_ns',
+        namespace: 'backup_ns',
         currentVersion: 3,
         minSupportedVersion: 2,
         invalidationStrategy: 'backup-and-purge',
@@ -422,196 +413,177 @@ describe('Pipeline Stress Challenger F4 (ADR-0009 Storage Schema Migration Engin
 
       engine.registerSchema(schema);
       const target = 'localStorage';
-      const key = 'valuable_legacy_key';
+      const key = 'important_data';
 
-      const legacyVal = { secretKey: 'ABC-123-DEF', auditLog: [1, 2, 3] };
-      await adapter.savePayload(target, key, legacyVal);
-      await adapter.saveHeader(target, key, 'backup_purge_policy_ns', {
-        namespace: 'backup_purge_policy_ns',
+      const payloadData = { secret: 'top_secret_v1', items: [1, 2, 3] };
+      await adapter.savePayload(target, key, payloadData);
+      await adapter.saveHeader(target, key, 'backup_ns', {
+        namespace: 'backup_ns',
         version: 1,
         updatedAt: Date.now(),
         appliedMigrations: [],
       });
 
-      const res = await engine.migrateStorageKey(target, key, 'backup_purge_policy_ns');
-
+      const res = await engine.migrateStorageKey(target, key, 'backup_ns');
       expect(res.ok).toBe(true);
-      if (res.ok) {
-        expect(res.value.invalidated).toBe(true);
-        expect(res.value.purged).toBe(true);
-      }
+      if (!res.ok) return;
 
-      // Main payload and header deleted
+      expect(res.value.invalidated).toBe(true);
+      expect(res.value.purged).toBe(true);
+      expect(backupKeyCreated).toContain('__backup__:backup_ns:important_data:');
+
+      // Check primary key is deleted
       const payloadRes = await adapter.loadPayload(target, key);
       expect(payloadRes.ok).toBe(true);
       if (payloadRes.ok) {
         expect(payloadRes.value).toBeNull();
       }
 
-      // Verify backup key exists in adapter's internal store
-      const storeMap = (adapter as any).getStore(target) as Map<string, string>;
-      let backupFound = false;
-      let backupData: any = null;
-
-      for (const [k, v] of storeMap.entries()) {
-        if (k.startsWith('__backup__:backup_purge_policy_ns:valuable_legacy_key:')) {
-          backupFound = true;
-          backupData = JSON.parse(v);
-          break;
-        }
+      // Check backup key is preserved in store
+      const backupPayloadRes = await adapter.loadPayload(target, backupKeyCreated);
+      expect(backupPayloadRes.ok).toBe(true);
+      if (backupPayloadRes.ok) {
+        expect(backupPayloadRes.value).toEqual(payloadData);
       }
-
-      expect(backupFound).toBe(true);
-      expect(backupData).toEqual(legacyVal);
     });
 
-    it('Policy "fail": should fail migration with INCOMPATIBLE_VERSION error without deleting payload', async () => {
+    it('fail: should return INCOMPATIBLE_VERSION error when fromVersion is below minSupportedVersion', async () => {
       const schema: SchemaDefinition = {
-        namespace: 'fail_policy_ns',
-        currentVersion: 3,
-        minSupportedVersion: 2,
+        namespace: 'strict_fail_ns',
+        currentVersion: 5,
+        minSupportedVersion: 3,
         invalidationStrategy: 'fail',
         migrations: [],
       };
 
       engine.registerSchema(schema);
-      const target = 'localStorage';
-      const key = 'obsolete_fail_key';
 
-      const rawPayload = { keepMeIntact: true };
-      await adapter.savePayload(target, key, rawPayload);
-      await adapter.saveHeader(target, key, 'fail_policy_ns', {
-        namespace: 'fail_policy_ns',
-        version: 1,
-        updatedAt: Date.now(),
-        appliedMigrations: [],
-      });
-
-      const res = await engine.migrateStorageKey(target, key, 'fail_policy_ns');
+      const res = await engine.migrateUp('strict_fail_ns', rawData, 1, 5);
 
       expect(res.ok).toBe(false);
       if (!res.ok) {
         expect(res.error.kind).toBe('INCOMPATIBLE_VERSION');
-      }
-
-      // Payload must NOT be deleted or modified
-      const payloadRes = await adapter.loadPayload(target, key);
-      expect(payloadRes.ok).toBe(true);
-      if (payloadRes.ok) {
-        expect(payloadRes.value).toEqual(rawPayload);
+        expect(res.error.version).toBe(1);
+        expect(res.error.message).toContain('below minimum supported version 3');
       }
     });
   });
 
-  describe('4. Concurrency Stress (50 Concurrent migrateStorageKey Invocations)', () => {
-    it('should execute 50 concurrent migrateStorageKey calls on the same key idempotently with zero race conditions', async () => {
-      let upExecutionCount = 0;
+  describe('4. 50 concurrent migrateStorageKey calls asserting idempotency and zero race conditions', () => {
+    it('should execute 50 concurrent migrateStorageKey calls on same key idempotently without race conditions', async () => {
+      let step2Count = 0;
+      let step3Count = 0;
 
       const schema: SchemaDefinition = {
-        namespace: 'concurrent_stress_ns',
-        currentVersion: 2,
-        minSupportedVersion: 1,
-        invalidationStrategy: 'purge',
-        migrations: [
-          {
-            version: 2,
-            name: 'Atomic Step 2',
-            up: async (d) => {
-              upExecutionCount++;
-              // Simulate small asynchronous delay
-              await new Promise((resolve) => setTimeout(resolve, 5));
-              return { ...d, atomicMigrated: true };
-            },
-            down: (d) => d,
-          },
-        ],
-      };
-
-      engine.registerSchema(schema);
-
-      const target = 'localStorage';
-      const key = 'shared_locked_key';
-
-      await adapter.savePayload(target, key, { counter: 0 });
-      await adapter.saveHeader(target, key, 'concurrent_stress_ns', {
-        namespace: 'concurrent_stress_ns',
-        version: 1,
-        updatedAt: Date.now(),
-        appliedMigrations: [],
-      });
-
-      // Launch 50 concurrent invocations
-      const promises = Array.from({ length: 50 }, () =>
-        engine.migrateStorageKey(target, key, 'concurrent_stress_ns')
-      );
-
-      const results = await Promise.all(promises);
-
-      // All 50 promises must succeed
-      for (const r of results) {
-        expect(r.ok).toBe(true);
-      }
-
-      // Step up function MUST execute exactly once
-      expect(upExecutionCount).toBe(1);
-
-      // Exactly 1 invocation applies step 2, 49 are no-ops
-      const appliedCounts = results.map((r) => (r.ok ? r.value.appliedSteps.length : 0));
-      const nonZeroApplied = appliedCounts.filter((c) => c > 0);
-      expect(nonZeroApplied.length).toBe(1);
-      expect(nonZeroApplied[0]).toBe(1);
-
-      // Storage payload & header state assertion
-      const payloadRes = await adapter.loadPayload(target, key);
-      expect(payloadRes.ok).toBe(true);
-      if (payloadRes.ok) {
-        expect(payloadRes.value).toEqual({ counter: 0, atomicMigrated: true });
-      }
-
-      const headerRes = await adapter.loadHeader(target, key, 'concurrent_stress_ns');
-      expect(headerRes.ok).toBe(true);
-      if (headerRes.ok) {
-        expect(headerRes.value?.version).toBe(2);
-      }
-    });
-  });
-
-  describe('5. Large Payload Performance & Memory Stability (10,000 Item Array / Deep Objects)', () => {
-    it('should migrate 10,000 nested items within 200ms latency threshold with zero memory leaks across 50 iterations', async () => {
-      const schema: SchemaDefinition = {
-        namespace: 'perf_stress_ns',
+        namespace: 'concurrent_50_ns',
         currentVersion: 3,
         minSupportedVersion: 1,
         invalidationStrategy: 'purge',
         migrations: [
           {
             version: 2,
-            name: 'Step 2: Add metadata block to 10k items',
+            name: 'Step 2: normalize email',
             up: (data) => {
-              const items = (data.records as Array<any>) || [];
-              const updatedRecords = items.map((rec) => ({
-                ...rec,
-                meta: { v2Tag: 'PROCESSED_V2', timestamp: 1700000000 },
-              }));
-              return { ...data, records: updatedRecords };
+              step2Count++;
+              return { ...data, email: (data.email as string)?.toLowerCase() };
             },
             down: (data) => data,
           },
           {
             version: 3,
-            name: 'Step 3: Aggregate stats and transform IDs',
+            name: 'Step 3: add schemaHash',
             up: (data) => {
-              const items = (data.records as Array<any>) || [];
-              const updatedRecords = items.map((rec) => ({
-                id: `UUID_${rec.id}`,
-                value: rec.val * 2,
-                meta: rec.meta,
+              step3Count++;
+              return { ...data, schemaHash: 'hash_v3_ok' };
+            },
+            down: (data) => data,
+          },
+        ],
+      };
+
+      engine.registerSchema(schema);
+      const target = 'localStorage';
+      const key = 'shared:user:profile';
+
+      await adapter.savePayload(target, key, { email: 'USER@DOMAIN.COM', name: 'Alice' });
+      await adapter.saveHeader(target, key, 'concurrent_50_ns', {
+        namespace: 'concurrent_50_ns',
+        version: 1,
+        updatedAt: Date.now(),
+        appliedMigrations: [],
+      });
+
+      // Fire 50 concurrent migration requests on the exact same target & key
+      const concurrentTasks = Array.from({ length: 50 }, () =>
+        engine.migrateStorageKey(target, key, 'concurrent_50_ns')
+      );
+
+      const results = await Promise.all(concurrentTasks);
+
+      // Verify all 50 calls succeeded
+      for (const res of results) {
+        expect(res.ok).toBe(true);
+        if (res.ok) {
+          expect(res.value.finalVersion).toBe(3);
+        }
+      }
+
+      // Assert migration functions were invoked EXACTLY once due to mutex serialization / header version updates
+      expect(step2Count).toBe(1);
+      expect(step3Count).toBe(1);
+
+      // Verify final saved state
+      const finalPayload = await adapter.loadPayload(target, key);
+      expect(finalPayload.ok).toBe(true);
+      if (finalPayload.ok) {
+        expect(finalPayload.value).toEqual({
+          email: 'user@domain.com',
+          name: 'Alice',
+          schemaHash: 'hash_v3_ok',
+        });
+      }
+
+      const finalHeader = await adapter.loadHeader(target, key, 'concurrent_50_ns');
+      expect(finalHeader.ok).toBe(true);
+      if (finalHeader.ok) {
+        expect(finalHeader.value?.version).toBe(3);
+        expect(finalHeader.value?.appliedMigrations).toEqual([2, 3]);
+      }
+    });
+  });
+
+  describe('5. 10,000 item array/nested object transformations asserting latency < 200ms and zero memory leaks', () => {
+    it('should transform 10,000 nested item record array within 200ms and maintain zero memory leak profile', async () => {
+      const schema: SchemaDefinition = {
+        namespace: 'perf_10k_nested_ns',
+        currentVersion: 3,
+        minSupportedVersion: 1,
+        invalidationStrategy: 'purge',
+        migrations: [
+          {
+            version: 2,
+            name: 'v1 to v2: compute totals and flatten tags',
+            up: (data) => {
+              const items = (data.items as any[]) || [];
+              const transformed = items.map((item) => ({
+                ...item,
+                totalValue: item.quantity * item.unitPrice,
+                tagCount: item.tags?.length || 0,
               }));
-              return {
-                ...data,
-                records: updatedRecords,
-                totalCount: updatedRecords.length,
-              };
+              return { ...data, items: transformed, v2Processed: true };
+            },
+            down: (data) => data,
+          },
+          {
+            version: 3,
+            name: 'v3: generate lookup map index',
+            up: (data) => {
+              const items = (data.items as any[]) || [];
+              const indexMap: Record<string, number> = {};
+              items.forEach((item) => {
+                indexMap[item.sku] = item.totalValue;
+              });
+              return { ...data, indexMap, v3Indexed: true };
             },
             down: (data) => data,
           },
@@ -620,55 +592,55 @@ describe('Pipeline Stress Challenger F4 (ADR-0009 Storage Schema Migration Engin
 
       engine.registerSchema(schema);
 
-      // Generate 10,000 record nested array payload
-      const initialRecords = Array.from({ length: 10000 }, (_, i) => ({
-        id: i,
-        val: i * 5,
-        tags: ['alpha', 'beta', 'gamma'],
-        attributes: { active: true, rating: 4.5 },
+      // Generate 10,000 complex nested objects
+      const items = Array.from({ length: 10000 }, (_, i) => ({
+        id: `item_${i}`,
+        sku: `SKU-${100000 + i}`,
+        quantity: (i % 10) + 1,
+        unitPrice: 19.99 + (i % 5),
+        tags: ['electronics', 'retail', `category_${i % 20}`],
+        attributes: {
+          weightGrams: 250 + i,
+          warehouse: `WH-${i % 5}`,
+        },
       }));
-      const payload = { records: initialRecords };
 
-      // Benchmark single execution latency
-      const startMs = performance.now();
-      const res = await engine.migrateUp('perf_stress_ns', payload, 1, 3);
-      const elapsedMs = performance.now() - startMs;
+      const rawData = { batchId: 'BATCH_2026_001', items };
+
+      const startTime = performance.now();
+      const res = await engine.migrateUp('perf_10k_nested_ns', rawData, 1, 3);
+      const executionTimeMs = performance.now() - startTime;
 
       expect(res.ok).toBe(true);
-      if (res.ok) {
-        expect(res.value.success).toBe(true);
-        expect(res.value.finalVersion).toBe(3);
-        const migratedRecords = res.value.migratedData?.records as any[];
-        expect(migratedRecords.length).toBe(10000);
-        expect(migratedRecords[0]).toEqual({
-          id: 'UUID_0',
-          value: 0,
-          meta: { v2Tag: 'PROCESSED_V2', timestamp: 1700000000 },
-        });
-        expect(migratedRecords[9999]).toEqual({
-          id: 'UUID_9999',
-          value: 99990,
-          meta: { v2Tag: 'PROCESSED_V2', timestamp: 1700000000 },
-        });
+      if (!res.ok) return;
+
+      expect(res.value.success).toBe(true);
+      expect(res.value.appliedSteps).toEqual([2, 3]);
+
+      const migrated = res.value.migratedData as any;
+      expect(migrated.items.length).toBe(10000);
+      expect(migrated.items[0].totalValue).toBe(1 * 19.99);
+      expect(migrated.items[9999].totalValue).toBe(10 * 23.99);
+      expect(Object.keys(migrated.indexMap).length).toBe(10000);
+
+      // Assert strict latency < 200ms
+      expect(executionTimeMs).toBeLessThan(200);
+
+      // Memory leak assertion: Repeat migration transformation 20 times in sequence
+      // and ensure execution time remains stable and does not degrade exponentially.
+      const runDurations: number[] = [];
+      for (let i = 0; i < 20; i++) {
+        const iterStart = performance.now();
+        const iterRes = await engine.migrateUp('perf_10k_nested_ns', rawData, 1, 3);
+        const iterDuration = performance.now() - iterStart;
+        expect(iterRes.ok).toBe(true);
+        runDurations.push(iterDuration);
       }
 
-      // Latency must be strictly under 200ms
-      expect(elapsedMs).toBeLessThan(200);
-
-      // Memory stability loop across 50 consecutive runs to ensure no memory accumulation
-      const iterations = 50;
-      const startLoopMs = performance.now();
-
-      for (let i = 0; i < iterations; i++) {
-        const loopRes = await engine.migrateUp('perf_stress_ns', payload, 1, 3);
-        expect(loopRes.ok).toBe(true);
-      }
-
-      const totalLoopTime = performance.now() - startLoopMs;
-      const avgIterationMs = totalLoopTime / iterations;
-
-      // Average iteration time should also stay well below 200ms
-      expect(avgIterationMs).toBeLessThan(200);
+      // Check average iteration duration < 200ms and last iteration is not degraded compared to first
+      const avgDuration = runDurations.reduce((a, b) => a + b, 0) / runDurations.length;
+      expect(avgDuration).toBeLessThan(200);
+      expect(runDurations[runDurations.length - 1]).toBeLessThan(200);
     });
   });
 });

@@ -462,4 +462,216 @@ describe('StorageSchemaMigrationEngine Stress & Edge Case Tests', () => {
       }
     });
   });
+
+  describe('Suite 3.5: Deep Version Migration Chains & Massive Rollbacks (v1 -> v50)', () => {
+    it('test_12_1: deep migration chain v1 -> v50 executes 49 migration steps sequentially under 200ms and rolls down back to v1', async () => {
+      const steps = Array.from({ length: 49 }, (_, i) => {
+        const targetVersion = i + 2;
+        return {
+          version: targetVersion,
+          name: `Migration Step v${targetVersion}`,
+          up: (data: Record<string, unknown>) => {
+            return { ...data, [`v${targetVersion}`]: true, stepCount: ((data.stepCount as number) || 0) + 1 };
+          },
+          down: (data: Record<string, unknown>) => {
+            const copy = { ...data };
+            delete copy[`v${targetVersion}`];
+            copy.stepCount = ((copy.stepCount as number) || 0) - 1;
+            return copy;
+          },
+        };
+      });
+
+      const schema: SchemaDefinition = {
+        namespace: 'deep_chain_ns',
+        currentVersion: 50,
+        minSupportedVersion: 1,
+        invalidationStrategy: 'purge',
+        migrations: steps,
+      };
+
+      const reg = engine.registerSchema(schema);
+      expect(reg.ok).toBe(true);
+
+      const validateRes = engine.validateSchemaChain('deep_chain_ns');
+      expect(validateRes.ok).toBe(true);
+
+      const initialData = { base: 'initial_value', stepCount: 0 };
+      const startTime = performance.now();
+      const resUp = await engine.migrateUp('deep_chain_ns', initialData, 1, 50);
+      const upDuration = performance.now() - startTime;
+
+      expect(resUp.ok).toBe(true);
+      if (!resUp.ok) return;
+
+      expect(resUp.value.success).toBe(true);
+      expect(resUp.value.initialVersion).toBe(1);
+      expect(resUp.value.finalVersion).toBe(50);
+      expect(resUp.value.appliedSteps.length).toBe(49);
+      expect(resUp.value.appliedSteps[0]).toBe(2);
+      expect(resUp.value.appliedSteps[48]).toBe(50);
+      expect(resUp.value.migratedData?.stepCount).toBe(49);
+      expect(resUp.value.migratedData?.v50).toBe(true);
+      expect(upDuration).toBeLessThan(200);
+
+      // Verify reverse migration v50 -> v1
+      const resDown = await engine.migrateDown('deep_chain_ns', resUp.value.migratedData!, 50, 1);
+      expect(resDown.ok).toBe(true);
+      if (resDown.ok) {
+        expect(resDown.value.success).toBe(true);
+        expect(resDown.value.initialVersion).toBe(50);
+        expect(resDown.value.finalVersion).toBe(1);
+        expect(resDown.value.appliedSteps.length).toBe(49);
+        expect(resDown.value.appliedSteps[0]).toBe(50);
+        expect(resDown.value.appliedSteps[48]).toBe(2);
+        expect(resDown.value.migratedData?.stepCount).toBe(0);
+        expect(resDown.value.migratedData?.v50).toBeUndefined();
+        expect(resDown.value.migratedData?.base).toBe('initial_value');
+      }
+    });
+
+    it('test_12_2: deep 50-step migration chain failing at step 50 executes 49 atomic step rollbacks in reverse order', async () => {
+      const rollbackExecutionOrder: number[] = [];
+
+      const steps = Array.from({ length: 49 }, (_, i) => {
+        const targetVersion = i + 2;
+        if (targetVersion === 50) {
+          return {
+            version: 50,
+            name: 'Step 50 (Fails)',
+            up: () => {
+              throw new Error('Step 50 execution failure');
+            },
+            down: (data: Record<string, unknown>) => data,
+          };
+        }
+        return {
+          version: targetVersion,
+          name: `Step ${targetVersion}`,
+          up: (data: Record<string, unknown>) => ({ ...data, [`v${targetVersion}`]: true }),
+          down: (data: Record<string, unknown>) => {
+            rollbackExecutionOrder.push(targetVersion);
+            const copy = { ...data };
+            delete copy[`v${targetVersion}`];
+            return copy;
+          },
+        };
+      });
+
+      const schema: SchemaDefinition = {
+        namespace: 'deep_fail_ns',
+        currentVersion: 50,
+        minSupportedVersion: 1,
+        invalidationStrategy: 'purge',
+        migrations: steps,
+      };
+
+      engine.registerSchema(schema);
+
+      const initialData = { baseline: 'stable' };
+      const res = await engine.migrateUp('deep_fail_ns', initialData, 1, 50);
+
+      expect(res.ok).toBe(false);
+      if (!res.ok) {
+        expect(res.error.kind).toBe('MIGRATION_STEP_FAILED');
+        expect(res.error.version).toBe(50);
+        expect(res.error.stepName).toBe('Step 50 (Fails)');
+      }
+
+      // Verify that all 48 applied steps (v49 down to v2) were rolled back in exact reverse order
+      expect(rollbackExecutionOrder.length).toBe(48);
+      expect(rollbackExecutionOrder[0]).toBe(49);
+      expect(rollbackExecutionOrder[47]).toBe(2);
+    });
+
+    it('test_12_3: 10,000 storage items migrated in single payload in under 200ms threshold strictly enforced', async () => {
+      const schema: SchemaDefinition = {
+        namespace: 'strict_perf_10k_ns',
+        currentVersion: 2,
+        minSupportedVersion: 1,
+        invalidationStrategy: 'purge',
+        migrations: [
+          {
+            version: 2,
+            name: 'Strict 10k batch transform',
+            up: (data) => {
+              const records = (data.records as Array<{ id: number; score: number }>) || [];
+              const updated = records.map((r) => ({ ...r, processed: true, score: r.score + 10 }));
+              return { ...data, records: updated };
+            },
+            down: (data) => data,
+          },
+        ],
+      };
+
+      engine.registerSchema(schema);
+
+      const records = Array.from({ length: 10000 }, (_, i) => ({ id: i, score: i * 2 }));
+      const startTime = performance.now();
+      const res = await engine.migrateUp('strict_perf_10k_ns', { records }, 1, 2);
+      const duration = performance.now() - startTime;
+
+      expect(res.ok).toBe(true);
+      if (res.ok) {
+        expect(res.value.success).toBe(true);
+        expect((res.value.migratedData?.records as any[]).length).toBe(10000);
+        expect((res.value.migratedData?.records as any[])[9999].score).toBe(19998 + 10);
+      }
+      expect(duration).toBeLessThan(200);
+    });
+
+    it('test_12_4: massive 5MB payload string property migrates cleanly under 200ms with checksum integrity', async () => {
+      const schema: SchemaDefinition = {
+        namespace: 'large_string_ns',
+        currentVersion: 2,
+        minSupportedVersion: 1,
+        invalidationStrategy: 'purge',
+        migrations: [
+          {
+            version: 2,
+            name: 'Append payload checksum tag',
+            up: (data) => {
+              const str = (data.content as string) || '';
+              return { ...data, content: str + '_MIGRATED_V2', length: str.length + 12 };
+            },
+            down: (data) => data,
+          },
+        ],
+      };
+
+      engine.registerSchema(schema);
+      const target = 'localStorage';
+      const key = '5mb_key';
+
+      const largeContent = 'X'.repeat(5 * 1024 * 1024); // 5MB string
+      await adapter.savePayload(target, key, { content: largeContent, length: largeContent.length });
+      await adapter.saveHeader(target, key, 'large_string_ns', {
+        namespace: 'large_string_ns',
+        version: 1,
+        updatedAt: Date.now(),
+        appliedMigrations: [],
+      });
+
+      const startTime = performance.now();
+      const res = await engine.migrateStorageKey(target, key, 'large_string_ns');
+      const duration = performance.now() - startTime;
+
+      expect(res.ok).toBe(true);
+      if (res.ok) {
+        expect(res.value.success).toBe(true);
+        expect(res.value.finalVersion).toBe(2);
+        expect(res.value.migratedData?.length).toBe(5 * 1024 * 1024 + 12);
+      }
+      expect(duration).toBeLessThan(200);
+
+      // Verify stored header checksum
+      const headerRes = await adapter.loadHeader(target, key, 'large_string_ns');
+      expect(headerRes.ok).toBe(true);
+      if (headerRes.ok) {
+        expect(headerRes.value?.version).toBe(2);
+        expect(headerRes.value?.checksum).toBeDefined();
+      }
+    });
+  });
 });
+
