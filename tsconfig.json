@@ -30,11 +30,12 @@
     "tests/storageAcl.test.ts",
     "tests/storageAclEngine.test.ts",
     "tests/storageAclInterceptor.test.ts",
-    "tests/e2e/tier1_feature_coverage/feature_04_storage_acl.test.ts",
     "tests/storageMutex.test.ts",
     "tests/storageMutexEngine.test.ts",
     "tests/feature_08_storage_mutex.test.ts",
     "tests/storageMutexEngine.stress.test.ts",
+    "tests/challenger_m2_f3_deadlock_lease.test.ts",
+    "tests/storageMutexEngine.adversarial.test.ts",
     "wxt.config.ts",
     ".wxt/wxt.d.ts"
   ]
