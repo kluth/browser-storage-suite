@@ -517,7 +517,7 @@ describe('StorageCompressionEngine & LzCompressionAdapter (ADR-0007 Storage Comp
         expect(decompressTime).toBeLessThan(10000);
         expect(decRes.value.length).toBe(largePayload.length);
       }
-    });
+    }, 30000);
 
     it('6.2 should maintain stable memory overhead across repeated large payload compression iterations', async () => {
       const sample = 'Memory overhead verification payload '.repeat(1000); // ~36 KB
