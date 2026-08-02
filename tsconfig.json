@@ -36,6 +36,7 @@
     "tests/storageMutexEngine.stress.test.ts",
     "tests/challenger_m2_f3_deadlock_lease.test.ts",
     "tests/storageMutexEngine.adversarial.test.ts",
+    "tests/challenger_m2_f3_r3_stress_concurrency.test.ts",
     "wxt.config.ts",
     ".wxt/wxt.d.ts"
   ]

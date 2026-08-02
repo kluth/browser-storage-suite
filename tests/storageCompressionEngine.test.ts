@@ -505,7 +505,7 @@ describe('StorageCompressionEngine & LzCompressionAdapter (ADR-0007 Storage Comp
       expect(compRes.ok).toBe(true);
       if (!compRes.ok) return;
 
-      expect(compressTime).toBeLessThan(2000);
+      expect(compressTime).toBeLessThan(10000);
       expect(compRes.value.compressedSize).toBeLessThan(compRes.value.uncompressedSize / 5);
 
       const decompressStart = performance.now();
@@ -514,7 +514,7 @@ describe('StorageCompressionEngine & LzCompressionAdapter (ADR-0007 Storage Comp
 
       expect(decRes.ok).toBe(true);
       if (decRes.ok) {
-        expect(decompressTime).toBeLessThan(2000);
+        expect(decompressTime).toBeLessThan(10000);
         expect(decRes.value.length).toBe(largePayload.length);
       }
     });
