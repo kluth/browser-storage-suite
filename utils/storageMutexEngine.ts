@@ -99,7 +99,7 @@ export class StorageMutexEngine implements StorageMutexPort {
     }
   }
 
-  private handleChannelMessage(data: any): void {
+  private async handleChannelMessage(data: any): Promise<void> {
     if (!data || typeof data !== 'object') return;
     const type = data.type;
     const payload = data.payload || data;
@@ -134,7 +134,7 @@ export class StorageMutexEngine implements StorageMutexPort {
         if (internal) {
           if (internal.timerId) clearTimeout(internal.timerId);
           this.internalWaiters.delete(internal.waiterInfo.requestId);
-          this.repository.removeWaiter(internal.waiterInfo.requestId);
+          await this.repository.removeWaiter(internal.waiterInfo.requestId);
           const lockInfo: StorageLockInfo = payload.lockInfo || {
             lockId: payload.lockId || `lock_${Math.random().toString(36).substring(2, 9)}_${Date.now()}`,
             name: lockName,
@@ -149,6 +149,41 @@ export class StorageMutexEngine implements StorageMutexPort {
             fencingToken: payload.fencingToken || 1,
           };
           internal.resolve(Result.ok(lockInfo));
+        }
+      }
+    }
+
+    if (type === 'DEADLOCK_DETECTED' && payload) {
+      const requesterId = payload.requesterId || payload.holderId;
+      const reqId = payload.requestId;
+      const lockName = payload.lockName || payload.name || payload.key;
+
+      if (requesterId === this.clientId || (reqId && this.internalWaiters.has(reqId))) {
+        let internal: InternalPromiseWaiter | undefined = reqId ? this.internalWaiters.get(reqId) : undefined;
+        if (!internal && lockName) {
+          const matching = Array.from(this.internalWaiters.values())
+            .filter((w) => w.waiterInfo.lockName === lockName && w.waiterInfo.requesterId === requesterId)
+            .sort((a, b) => b.waiterInfo.priority - a.waiterInfo.priority);
+          if (matching.length > 0) {
+            internal = matching[0];
+          }
+        }
+
+        if (internal) {
+          this.deadlocksDetectedCount += 1;
+          if (internal.timerId) clearTimeout(internal.timerId);
+          this.internalWaiters.delete(internal.waiterInfo.requestId);
+          await this.repository.removeWaiter(internal.waiterInfo.requestId);
+          internal.resolve(
+            Result.err(
+              new StorageMutexError(
+                'DEADLOCK_DETECTED',
+                payload.error?.message || `Deadlock cycle detected for requester '${requesterId}' on lock '${lockName}'`,
+                lockName,
+                requesterId
+              )
+            )
+          );
         }
       }
     }
@@ -448,15 +483,29 @@ export class StorageMutexEngine implements StorageMutexPort {
     await this.repository.saveWaiter(waiterInfo);
     this.postMessage('LOCK_REQUESTED', { requestId, name });
 
-    // Deadlock detection after queueing waiter info (only if requester holds active locks)
-    const holdsAnyLock = allLocks.some((l) => l.holderId === this.clientId && l.state === 'ACQUIRED');
+    // Deadlock detection after queueing waiter info — reload fresh locks snapshot to capture concurrent tab state
+    const freshLocksRes = await this.repository.loadAllLocks();
+    const freshLocks = freshLocksRes.ok ? freshLocksRes.value : [];
+
+    const holdsAnyLock = freshLocks.some((l) => l.holderId === this.clientId && l.state === 'ACQUIRED');
     if (holdsAnyLock) {
       const waitersRes = await this.repository.loadWaiters();
       const currentWaiters = waitersRes.ok ? waitersRes.value : [];
-      if (this.detectDeadlockWithData(this.clientId, name, allLocks, currentWaiters)) {
+      if (this.detectDeadlockWithData(this.clientId, name, freshLocks, currentWaiters)) {
         this.deadlocksDetectedCount += 1;
         await this.removeWaiterInternal(requestId);
         if (internalWaiter.timerId) clearTimeout(internalWaiter.timerId);
+        this.postMessage('DEADLOCK_DETECTED', {
+          requestId,
+          lockName: name,
+          name,
+          requesterId: this.clientId,
+          holderId: this.clientId,
+          error: {
+            kind: 'DEADLOCK_DETECTED',
+            message: `Deadlock cycle detected for requester '${this.clientId}' on lock '${name}'`,
+          },
+        });
         return Result.err(
           new StorageMutexError(
             'DEADLOCK_DETECTED',
@@ -779,6 +828,7 @@ export class StorageMutexEngine implements StorageMutexPort {
           winner.resolved = true;
           this.internalWaiters.delete(winner.waiterInfo.requestId);
           if (winner.timerId) clearTimeout(winner.timerId);
+          await this.repository.removeWaiter(winner.waiterInfo.requestId);
           winner.resolve(Result.ok({ ...lock }));
         }
       }
@@ -839,6 +889,17 @@ export class StorageMutexEngine implements StorageMutexPort {
       if (requesterHoldsLock && this.detectDeadlockWithData(waiter.requesterId, name, allLocks, waiters)) {
         this.deadlocksDetectedCount += 1;
         await this.repository.removeWaiter(waiter.requestId);
+        this.postMessage('DEADLOCK_DETECTED', {
+          requestId: waiter.requestId,
+          lockName: name,
+          name,
+          requesterId: waiter.requesterId,
+          holderId: waiter.requesterId,
+          error: {
+            kind: 'DEADLOCK_DETECTED',
+            message: `Deadlock cycle detected for requester '${waiter.requesterId}' on lock '${name}'`,
+          },
+        });
         const internal = this.internalWaiters.get(waiter.requestId);
         if (internal) {
           if (internal.timerId) clearTimeout(internal.timerId);
