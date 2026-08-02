@@ -41,6 +41,10 @@
     "tests/storageSchemaMigrationAdapter.test.ts",
     "tests/feature_09_storage_schema_migration.test.ts",
     "tests/storageSchemaMigrationEngine.stress.test.ts",
+    "tests/timeSeriesSnapshotEngine.test.ts",
+    "tests/timeSeriesSnapshotAdapter.test.ts",
+    "tests/feature_11_time_series_snapshot.test.ts",
+    "tests/timeSeriesSnapshotEngine.stress.test.ts",
     "wxt.config.ts",
     ".wxt/wxt.d.ts"
   ]
