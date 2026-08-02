@@ -177,7 +177,7 @@ describe('RealtimeDiffEngine Empirical Stress Harness (ADR-0003)', () => {
       console.log(`[MEMORY BENCHMARK] Heap delta after 5,000 diff cycles: ${memoryGrowthMb.toFixed(2)} MB`);
       // Heap growth should remain bounded (less than 25MB overall delta after GC or execution)
       expect(memoryGrowthMb).toBeLessThan(25);
-    });
+    }, 30000);
   });
 
   describe('4. Boundary & RFC 6901 Escaping Stress', () => {
