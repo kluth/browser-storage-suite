@@ -164,7 +164,17 @@ export class StorageSchemaMigrationEngine implements StorageSchemaMigrationPort 
         return invalidationRes;
       }
       return Result.ok({
-        ...invalidationRes.value,
+        success: invalidationRes.value.success,
+        namespace: invalidationRes.value.namespace,
+        key: invalidationRes.value.key,
+        target: invalidationRes.value.target,
+        initialVersion: invalidationRes.value.initialVersion,
+        finalVersion: invalidationRes.value.finalVersion,
+        appliedSteps: invalidationRes.value.appliedSteps,
+        rolledBackSteps: invalidationRes.value.rolledBackSteps,
+        invalidated: invalidationRes.value.invalidated,
+        purged: invalidationRes.value.purged,
+        migratedData: invalidationRes.value.migratedData,
         executionTimeMs: Math.round(performance.now() - startTime),
       });
     }
@@ -550,9 +560,18 @@ export class StorageSchemaMigrationEngine implements StorageSchemaMigrationPort 
     }
 
     return Result.ok({
-      ...resValue,
+      success: true,
+      namespace: resValue.namespace,
       key,
       target,
+      initialVersion: resValue.initialVersion,
+      finalVersion: resValue.finalVersion,
+      appliedSteps: resValue.appliedSteps,
+      rolledBackSteps: resValue.rolledBackSteps,
+      invalidated: resValue.invalidated,
+      purged: resValue.purged,
+      migratedData: resValue.migratedData,
+      executionTimeMs: resValue.executionTimeMs,
     });
   }
 
@@ -563,7 +582,8 @@ export class StorageSchemaMigrationEngine implements StorageSchemaMigrationPort 
     reason: string
   ): Promise<Result<MigrationResult, StorageSchemaMigrationError>> {
     const schema = this.schemas.get(namespace);
-    const strategy = schema?.invalidationStrategy ?? 'purge';
+    const strategy = schema && schema.invalidationStrategy ? schema.invalidationStrategy : 'purge';
+    const currentVer = schema ? schema.currentVersion : 1;
 
     if (strategy === 'purge') {
       await this.repositoryAdapter.deleteHeader(target, key, namespace);
@@ -574,7 +594,7 @@ export class StorageSchemaMigrationEngine implements StorageSchemaMigrationPort 
         key,
         target,
         initialVersion: 0,
-        finalVersion: schema?.currentVersion ?? 1,
+        finalVersion: currentVer,
         appliedSteps: [],
         rolledBackSteps: [],
         invalidated: true,
@@ -584,8 +604,8 @@ export class StorageSchemaMigrationEngine implements StorageSchemaMigrationPort 
     }
 
     if (strategy === 'reset-default') {
-      const defaultData = schema?.defaultValue ? JSON.parse(JSON.stringify(schema.defaultValue)) : {};
-      const currentVer = schema?.currentVersion ?? 1;
+      const defaultData =
+        schema && schema.defaultValue ? JSON.parse(JSON.stringify(schema.defaultValue)) : {};
 
       await this.repositoryAdapter.savePayload(target, key, defaultData);
       await this.repositoryAdapter.saveHeader(target, key, namespace, {
@@ -614,7 +634,12 @@ export class StorageSchemaMigrationEngine implements StorageSchemaMigrationPort 
 
     if (strategy === 'backup-and-purge') {
       const payloadRes = await this.repositoryAdapter.loadPayload(target, key);
-      if (payloadRes.ok && payloadRes.value && typeof this.repositoryAdapter.backupPayload === 'function') {
+      if (
+        payloadRes.ok &&
+        payloadRes.value !== null &&
+        payloadRes.value !== undefined &&
+        typeof this.repositoryAdapter.backupPayload === 'function'
+      ) {
         await this.repositoryAdapter.backupPayload(target, key, namespace, payloadRes.value);
       }
       await this.repositoryAdapter.deleteHeader(target, key, namespace);
@@ -626,7 +651,7 @@ export class StorageSchemaMigrationEngine implements StorageSchemaMigrationPort 
         key,
         target,
         initialVersion: 0,
-        finalVersion: schema?.currentVersion ?? 1,
+        finalVersion: currentVer,
         appliedSteps: [],
         rolledBackSteps: [],
         invalidated: true,

@@ -16,12 +16,67 @@ export function computeChecksum(namespace: string, key: string, version: number)
   return (hash >>> 0).toString(16);
 }
 
+export interface StorageDriver {
+  getItem(target: StorageTarget, key: string): string | null;
+  setItem(target: StorageTarget, key: string, value: string): void;
+  removeItem(target: StorageTarget, key: string): void;
+}
+
+export class DefaultStorageDriver implements StorageDriver {
+  public getItem(target: StorageTarget, key: string): string | null {
+    if (typeof window !== 'undefined') {
+      try {
+        if (target === 'localStorage' && window.localStorage) {
+          const val = window.localStorage.getItem(key);
+          if (val !== null) return val;
+        } else if (target === 'sessionStorage' && window.sessionStorage) {
+          const val = window.sessionStorage.getItem(key);
+          if (val !== null) return val;
+        }
+      } catch {
+        // Fall back to in-memory store on storage access restriction
+      }
+    }
+    return null;
+  }
+
+  public setItem(target: StorageTarget, key: string, value: string): void {
+    if (typeof window !== 'undefined') {
+      try {
+        if (target === 'localStorage' && window.localStorage) {
+          window.localStorage.setItem(key, value);
+        } else if (target === 'sessionStorage' && window.sessionStorage) {
+          window.sessionStorage.setItem(key, value);
+        }
+      } catch {
+        // Fall back to in-memory store on storage failure
+      }
+    }
+  }
+
+  public removeItem(target: StorageTarget, key: string): void {
+    if (typeof window !== 'undefined') {
+      try {
+        if (target === 'localStorage' && window.localStorage) {
+          window.localStorage.removeItem(key);
+        } else if (target === 'sessionStorage' && window.sessionStorage) {
+          window.sessionStorage.removeItem(key);
+        }
+      } catch {
+        // Fall back to in-memory store on storage failure
+      }
+    }
+  }
+}
+
 export class StorageSchemaMigrationAdapter implements StorageSchemaMigrationRepositoryPort {
   private inMemoryStores: Map<StorageTarget, Map<string, string>> = new Map();
   private storageRepo?: StorageRepositoryPort;
+  private driver: StorageDriver;
 
-  constructor(storageRepo?: StorageRepositoryPort) {
+  constructor(storageRepo?: StorageRepositoryPort, driver?: StorageDriver) {
     this.storageRepo = storageRepo;
+    this.driver = driver ?? new DefaultStorageDriver();
   }
 
   private getStore(target: StorageTarget): Map<string, string> {
@@ -34,18 +89,11 @@ export class StorageSchemaMigrationAdapter implements StorageSchemaMigrationRepo
   }
 
   private getRaw(target: StorageTarget, key: string): string | null {
-    if (typeof window !== 'undefined') {
-      try {
-        if (target === 'localStorage' && window.localStorage) {
-          const val = window.localStorage.getItem(key);
-          if (val !== null) return val;
-        } else if (target === 'sessionStorage' && window.sessionStorage) {
-          const val = window.sessionStorage.getItem(key);
-          if (val !== null) return val;
-        }
-      } catch {
-        // Fall back to in-memory store
-      }
+    try {
+      const driverVal = this.driver.getItem(target, key);
+      if (driverVal !== null) return driverVal;
+    } catch {
+      // Fall back to in-memory store on storage access restriction
     }
     const store = this.getStore(target);
     return store.get(key) ?? null;
@@ -54,32 +102,20 @@ export class StorageSchemaMigrationAdapter implements StorageSchemaMigrationRepo
   private setRaw(target: StorageTarget, key: string, value: string): void {
     const store = this.getStore(target);
     store.set(key, value);
-    if (typeof window !== 'undefined') {
-      try {
-        if (target === 'localStorage' && window.localStorage) {
-          window.localStorage.setItem(key, value);
-        } else if (target === 'sessionStorage' && window.sessionStorage) {
-          window.sessionStorage.setItem(key, value);
-        }
-      } catch {
-        // Fall back to in-memory store
-      }
+    try {
+      this.driver.setItem(target, key, value);
+    } catch {
+      // Fall back to in-memory store on storage failure
     }
   }
 
   private removeRaw(target: StorageTarget, key: string): void {
     const store = this.getStore(target);
     store.delete(key);
-    if (typeof window !== 'undefined') {
-      try {
-        if (target === 'localStorage' && window.localStorage) {
-          window.localStorage.removeItem(key);
-        } else if (target === 'sessionStorage' && window.sessionStorage) {
-          window.sessionStorage.removeItem(key);
-        }
-      } catch {
-        // Fall back to in-memory store
-      }
+    try {
+      this.driver.removeItem(target, key);
+    } catch {
+      // Fall back to in-memory store on storage failure
     }
   }
 
